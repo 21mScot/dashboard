@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, Optional
 
-import pandas as pd
 import streamlit as st
 
 from src.core.live_data import NetworkData
@@ -149,43 +148,11 @@ def render_miner_selection(
                 "Revenue / day (USD, live)",
                 f"${revenue_usd_per_day:,.2f}",
             )
-
-        # ---------- variance between all miners ----------
-        rows = []
-        for m in miner_list:
-            m_btc = _estimate_btc_per_day(m, network_data)
-            m_rev = m_btc * network_data.btc_price_usd
-            rows.append(
-                {
-                    "Model": m.name,
-                    "Hashrate (TH/s)": m.hashrate_th,
-                    "Power (W)": m.power_w,
-                    "Eff. (J/TH)": m.efficiency_j_per_th,
-                    "BTC / day": m_btc,
-                    "Revenue / day (USD)": m_rev,
-                    "Indicative price (GBP)": m.price_gbp,
-                }
-            )
-
-        df = pd.DataFrame(rows).set_index("Model")
-
-        st.markdown("#### Variance between miners (live data)")
-        st.dataframe(
-            df.style.format(
-                {
-                    "Hashrate (TH/s)": "{:.0f}",
-                    "Power (W)": "{:.0f}",
-                    "Eff. (J/TH)": "{:.1f}",
-                    "BTC / day": "{:.5f}",
-                    "Revenue / day (USD)": "${:,.2f}",
-                    "Indicative price (GBP)": "£{:,.0f}",
-                }
-            )
-        )
     else:
         st.info(
             "Toggle **'Use live BTC network data'** in the sidebar to see BTC/day and "
             "revenue comparisons between miners."
         )
 
+    # 👇 important: always return a MinerOption, regardless of live data
     return miner

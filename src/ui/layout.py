@@ -11,6 +11,8 @@ from src.core.site_metrics import compute_site_metrics
 from src.ui.miner_selection import render_miner_selection
 from src.ui.site_inputs import render_site_inputs
 
+# from src.ui.daily_revenue import render_daily_revenue
+
 
 def load_live_network_data() -> NetworkData | None:
     """
@@ -113,6 +115,9 @@ def render_dashboard() -> None:
         # -----------------------------------------------------------------
         metrics = compute_site_metrics(site_inputs, selected_miner)
 
+        # 🔹 NEW: daily BTC & revenue UI (SEC-aware)
+        #        render_daily_revenue(metrics)
+
         st.markdown("---")
         st.markdown("## From one miner to your whole site")
 
@@ -132,14 +137,6 @@ def render_dashboard() -> None:
         st.caption(
             f"Approx. {metrics.site_power_spare_kw:.1f} kW spare capacity "
             "remains for future expansion or overheads."
-        )
-
-        # BTC/day placeholders – ready to be wired to SEC backend
-        st.markdown("### BTC production (to be wired to SEC backend)")
-        st.info(
-            "Per-ASIC and per-site BTC/day will be populated once this dashboard is "
-            "connected to the Site Economy Calculator (SEC) backend. For now, "
-            "we're focusing on the site physics (how many miners fit, and power usage)."
         )
 
         # -----------------------------------------------------------------
