@@ -1,56 +1,68 @@
+# src/ui/layout.py
+
 from __future__ import annotations
 
+import textwrap
 from dataclasses import asdict
 from datetime import datetime, timezone
 
 import streamlit as st
 
 from src.config import settings
+from src.config.settings import LIVE_DATA_CACHE_TTL_S
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
 from src.core.site_metrics import compute_site_metrics
 from src.ui.miner_selection import render_miner_selection
 from src.ui.site_inputs import render_site_inputs
 
-# from src.ui.daily_revenue import render_daily_revenue
 
-
+@st.cache_data(
+    ttl=LIVE_DATA_CACHE_TTL_S,
+    show_spinner="Loading live BTC network data...",
+)
 def load_live_network_data() -> NetworkData | None:
     """
-    Try to fetch live BTC price + difficulty on every run.
-    If it fails, show a structured warning and fall back to static assumptions.
+    Cached wrapper around get_live_network_data.
+
+    Returns live NetworkData on success, or a NetworkData built from static
+    assumptions if the live call fails.
+
+    Returns None only if something very unexpected happens.
     """
+    static_price = settings.DEFAULT_BTC_PRICE_USD
+    static_diff = settings.DEFAULT_NETWORK_DIFFICULTY
+    static_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
+
     try:
         return get_live_network_data()
-
     except LiveDataError as e:
-        # 1. Fallback static values from settings.py
-        static_price = settings.DEFAULT_BTC_PRICE_USD
-        static_diff = settings.DEFAULT_DIFFICULTY
-        static_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
-
-        # 2. Main warning box (no HTML, just markdown)
-        warning_md = (
+        # Render a yellow warning and fall back to static assumptions.
+        warning_md = textwrap.dedent(
             "**Could not load live BTC network data — "
             "using static assumptions instead.**\n\n"
             "**Fallback values now in use:**\n"
             f"- BTC price (USD): `${static_price:,.0f}`\n"
             f"- Difficulty: `{static_diff:,}`\n"
             f"- Block subsidy: `{static_subsidy} BTC`\n"
+            "\n"
+            "<details>\n"
+            "<summary><strong>Technical details</strong></summary>\n\n"
+            "```text\n"
+            f"{e}\n"
+            "```\n"
+            "</details>\n"
         )
-
         st.warning(warning_md, icon="⚠️")
 
-        # 3. Collapsible technical details rendered with raw HTML, just below
-        details_html = f"""
-<details>
-  <summary><strong>Technical details</strong></summary>
-  <pre style="white-space: pre-wrap; font-size: 0.8rem; margin-top: 0.5rem;">
-{e}
-  </pre>
-</details>
-"""
-        st.markdown(details_html, unsafe_allow_html=True)
-
+        # Return a NetworkData built from static assumptions
+        return NetworkData(
+            btc_price_usd=static_price,
+            difficulty=static_diff,
+            block_subsidy_btc=static_subsidy,
+            block_height=None,
+        )
+    except Exception as e:  # pragma: no cover – last-resort guard
+        st.error(f"Unexpected error while loading network data: {e}")
         return None
 
 
@@ -75,7 +87,8 @@ def render_dashboard() -> None:
             st.caption(f"Last updated: {last_updated_utc}")
     else:
         st.sidebar.info(
-            "Using static default BTC price and difficulty (live data not available)."
+            "Using static default BTC price and difficulty "
+            "(live data not available)."
         )
 
     # -------------------------------------------------------------------------
@@ -105,9 +118,8 @@ def render_dashboard() -> None:
             site_inputs = render_site_inputs()
 
         with right:
-            # pass through network_data so miner comparison
-            # can use live price/difficulty
-
+            # Pass through network_data so miner comparison
+            # can use live price/difficulty.
             selected_miner = render_miner_selection(network_data=network_data)
 
         # -----------------------------------------------------------------
@@ -115,8 +127,8 @@ def render_dashboard() -> None:
         # -----------------------------------------------------------------
         metrics = compute_site_metrics(site_inputs, selected_miner)
 
-        # 🔹 NEW: daily BTC & revenue UI (SEC-aware)
-        #        render_daily_revenue(metrics)
+        # 🔹 Hook for daily BTC & revenue UI (SEC-aware) if/when needed:
+        # render_daily_revenue(metrics)
 
         st.markdown("---")
         st.markdown("## From one miner to your whole site")
