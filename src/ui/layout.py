@@ -36,7 +36,6 @@ def load_live_network_data() -> NetworkData | None:
     try:
         return get_live_network_data()
     except LiveDataError as e:
-        # Render a yellow warning and fall back to static assumptions.
         warning_md = textwrap.dedent(
             "**Could not load live BTC network data — "
             "using static assumptions instead.**\n\n"
@@ -52,16 +51,17 @@ def load_live_network_data() -> NetworkData | None:
             "```\n"
             "</details>\n"
         )
+
         st.warning(warning_md, icon="⚠️")
 
-        # Return a NetworkData built from static assumptions
         return NetworkData(
             btc_price_usd=static_price,
             difficulty=static_diff,
             block_subsidy_btc=static_subsidy,
             block_height=None,
         )
-    except Exception as e:  # pragma: no cover – last-resort guard
+
+    except Exception as e:
         st.error(f"Unexpected error while loading network data: {e}")
         return None
 
@@ -71,19 +71,16 @@ def render_dashboard() -> None:
     st.title("Bitcoin Mining Feasibility Dashboard")
     st.caption("Exploring site physics, BTC production, and revenue scenarios.")
 
-    # Toggle to enable/disable live data
+    # Sidebar: allow switching live data ON/OFF
     use_live = st.sidebar.toggle("Use live BTC network data", value=True)
 
-    # One place where we decide what network data the rest of the app sees
     network_data: NetworkData | None = load_live_network_data() if use_live else None
 
-    # Sidebar: show live data summary or fallback message
+    # Sidebar: show live data or fallback
     if network_data is not None:
         last_updated_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         with st.sidebar.expander("Live BTC network data", expanded=True):
             st.metric("BTC price (USD)", f"${network_data.btc_price_usd:,.0f}")
-            # We keep difficulty in the model but hide it from the main UI.
-            # st.metric("Difficulty", f"{network_data.difficulty:,.0f}")
             st.metric("Block subsidy", f"{network_data.block_subsidy_btc} BTC")
             st.caption(
                 "Network difficulty is used under the hood to derive BTC/day "
@@ -98,7 +95,7 @@ def render_dashboard() -> None:
         )
 
     # -------------------------------------------------------------------------
-    # TABS SETUP
+    # TABS
     # -------------------------------------------------------------------------
     tab_overview, tab_scenarios, tab_assumptions = st.tabs(
         [
@@ -128,23 +125,14 @@ def render_dashboard() -> None:
             site_inputs = render_site_inputs()
 
         with right:
-            # pass through network_data so miner comparison
-            # can use live price/difficulty
             selected_miner = render_miner_selection(network_data=network_data)
 
-        # -----------------------------------------------------------------
-        # From one ASIC to the whole site
-        # -----------------------------------------------------------------
         metrics = compute_site_metrics(site_inputs, selected_miner)
-
-        # 🔹 daily BTC & revenue UI (SEC-aware) can go here later
-        # render_daily_revenue(metrics)
 
         st.markdown("---")
         st.markdown("## From one miner to your whole site")
 
         col_a, col_b, col_c = st.columns(3)
-
         col_a.metric(
             "ASICs supported",
             f"{metrics.asics_supported}",
@@ -157,13 +145,10 @@ def render_dashboard() -> None:
         )
 
         st.caption(
-            f"Approx. {metrics.site_power_spare_kw:.1f} kW spare capacity "
-            "remains for future expansion or overheads."
+            f"Approx. {metrics.site_power_spare_kw:.1f} kW spare capacity remains "
+            "for future expansion or overheads."
         )
 
-        # -----------------------------------------------------------------
-        # Debug: raw objects (for development + walkthroughs)
-        # -----------------------------------------------------------------
         with st.expander("🔍 Debug: raw input & derived data", expanded=False):
             st.markdown("**Site inputs**")
             st.json(asdict(site_inputs))
@@ -178,9 +163,6 @@ def render_dashboard() -> None:
     # SCENARIOS & RISK TAB
     # -------------------------------------------------------------------------
     with tab_scenarios:
-        # Use the same site_inputs, selected_miner and network_data
-        # to drive the new site-level scenarios engine.
-        st.subheader("🎯 Scenarios & Risk")
         render_scenarios_and_risk(
             site=site_inputs,
             miner=selected_miner,

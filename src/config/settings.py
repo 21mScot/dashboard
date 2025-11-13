@@ -1,8 +1,9 @@
+# src/config/settings.py
 # --- Live data / network constants ---
 
-COINGECKO_SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
 MEMPOOL_BLOCKTIP_URL = "https://mempool.space/api/v1/blocks/tip-height"
 BLOCKCHAIN_DIFFICULTY_URL = "https://blockchain.info/q/getdifficulty"
+COINGECKO_SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
 
 # Hard-coded post-2024 halving subsidy
 BLOCK_SUBSIDY_BTC = 3.125
