@@ -1,3 +1,5 @@
+# src/ui/miner_selection.py
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -87,6 +89,15 @@ def _estimate_btc_per_day(miner: MinerOption, network: NetworkData) -> float:
     return btc_per_day
 
 
+def _estimate_network_hashrate_ths(network: NetworkData) -> float:
+    """
+    Derive estimated network hashrate (TH/s) from difficulty.
+    This is for display/communication only.
+    """
+    network_hashrate_hs = network.difficulty * (2**32) / 600.0
+    return network_hashrate_hs / 1e12  # convert H/s -> TH/s
+
+
 def render_miner_selection(
     network_data: NetworkData | None = None,
 ) -> MinerOption:
@@ -148,10 +159,21 @@ def render_miner_selection(
                 "Revenue / day (USD, live)",
                 f"${revenue_usd_per_day:,.2f}",
             )
+
+        # Small-footprint transparency: show derived network hashrate with a tooltip
+        network_hashrate_ths = _estimate_network_hashrate_ths(network_data)
+        st.metric(
+            "Estimated network hashrate",
+            f"{network_hashrate_ths:,.0f} TH/s",
+            help=(
+                "Derived from current Bitcoin difficulty, target block time "
+                "(10 minutes) and a protocol constant (2^32)."
+            ),
+        )
     else:
         st.info(
-            "Toggle **'Use live BTC network data'** in the sidebar to see BTC/day and "
-            "revenue comparisons between miners."
+            "Live BTC/day and revenue estimates are temporarily unavailable. "
+            "We’re using static assumptions elsewhere in the app."
         )
 
     # 👇 important: always return a MinerOption, regardless of live data

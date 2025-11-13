@@ -6,12 +6,13 @@ from dataclasses import dataclass
 from typing import Optional
 
 import requests
+import streamlit as st
 
-COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price"
-MEMPOOL_BLOCKTIP_URL = "https://mempool.space/api/v1/blocks/tip-height"
+from src.config import settings
 
-# Simple difficulty endpoint that returns a raw number
-BLOCKCHAIN_DIFFICULTY_URL = "https://blockchain.info/q/getdifficulty"
+# ---------------------------------------------------------
+# Data Model
+# ---------------------------------------------------------
 
 
 @dataclass
@@ -27,13 +28,14 @@ class LiveDataError(RuntimeError):
 
 
 # ---------------------------------------------------------
-# BTC Price
+# Internal fetch helpers (no caching here)
 # ---------------------------------------------------------
 
 
-def _get_btc_price_usd() -> float:
+def _fetch_btc_price_usd() -> float:
+    """Fetch BTC price in USD from Coingecko."""
     resp = requests.get(
-        COINGECKO_URL,
+        settings.COINGECKO_PRICE_URL,
         params={"ids": "bitcoin", "vs_currencies": "usd"},
         timeout=10,
     )
@@ -42,28 +44,21 @@ def _get_btc_price_usd() -> float:
     return float(data["bitcoin"]["usd"])
 
 
-# ---------------------------------------------------------
-# Difficulty + Height
-# ---------------------------------------------------------
-
-
-def _get_difficulty_and_height() -> tuple[float, int | None]:
+def _fetch_difficulty_and_height() -> tuple[float, Optional[int]]:
     """
-    Fetch the current Bitcoin network difficulty and (optionally)
-    the latest block height.
-    Difficulty comes from blockchain.info,
-    height from mempool.space.
+    Fetch Bitcoin difficulty and (optionally) block height.
+    Difficulty: blockchain.info
+    Height: mempool.space
     """
 
-    # --- difficulty ---
-    diff_resp = requests.get(BLOCKCHAIN_DIFFICULTY_URL, timeout=10)
+    # Difficulty
+    diff_resp = requests.get(settings.BLOCKCHAIN_DIFFICULTY_URL, timeout=10)
     diff_resp.raise_for_status()
-    # blockchain.info/q/getdifficulty returns the difficulty as plain text float
     difficulty = float(diff_resp.text.strip())
 
-    # --- block height (optional) ---
+    # Block height (optional)
     try:
-        height_resp = requests.get(MEMPOOL_BLOCKTIP_URL, timeout=10)
+        height_resp = requests.get(settings.MEMPOOL_BLOCKTIP_URL, timeout=10)
         height_resp.raise_for_status()
         height = int(height_resp.json())
     except Exception:
@@ -73,26 +68,41 @@ def _get_difficulty_and_height() -> tuple[float, int | None]:
 
 
 # ---------------------------------------------------------
-# Public-facing API
+# Cached public API entry point
 # ---------------------------------------------------------
+
+
+@st.cache_data(ttl=settings.LIVE_DATA_TTL_HOURS * 3600, show_spinner=False)
+def _fetch_network_data_cached() -> NetworkData:
+    """Cached wrapper around all external API calls."""
+    print("🔌 Hitting external APIs for live BTC network data")  # DEBUG
+    try:
+        price = _fetch_btc_price_usd()
+        difficulty, height = _fetch_difficulty_and_height()
+
+        return NetworkData(
+            btc_price_usd=price,
+            difficulty=difficulty,
+            block_subsidy_btc=settings.DEFAULT_BLOCK_SUBSIDY_BTC,
+            block_height=height,
+        )
+
+    except Exception as exc:
+        # Raise a structured error so UI can present a fallback panel
+        raise LiveDataError(f"Failed to fetch live data: {exc}") from exc
 
 
 def get_live_network_data() -> NetworkData:
     """
-    Fetch current BTC price + network difficulty from public APIs.
+    Public-facing function for the rest of the app.
+    Always returns one of:
 
-    Block subsidy is currently 3.125 BTC (post-2024 halving); we hard-code it
-    instead of hitting another API.
+    - Cached live network data
+    - OR raises LiveDataError (UI must handle with fallbacks)
+
+    This ensures:
+    - No duplicated API hits
+    - No re-fetching on UI interactions
+    - Safe consistent behaviour across the app
     """
-    try:
-        price = _get_btc_price_usd()
-        difficulty, height = _get_difficulty_and_height()
-    except Exception as exc:
-        raise LiveDataError(f"Failed to fetch live data: {exc}") from exc
-
-    return NetworkData(
-        btc_price_usd=price,
-        difficulty=difficulty,
-        block_subsidy_btc=3.125,
-        block_height=height,
-    )
+    return _fetch_network_data_cached()
