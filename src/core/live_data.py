@@ -15,7 +15,7 @@ from src.config import settings
 # ---------------------------------------------------------
 
 
-@dataclass
+@dataclass(slots=True)
 class NetworkData:
     btc_price_usd: float
     difficulty: float
@@ -37,11 +37,16 @@ def _fetch_btc_price_usd() -> float:
     resp = requests.get(
         settings.COINGECKO_PRICE_URL,
         params={"ids": "bitcoin", "vs_currencies": "usd"},
-        timeout=10,
     )
     resp.raise_for_status()
     data = resp.json()
-    return float(data["bitcoin"]["usd"])
+
+    try:
+        price = float(data["bitcoin"]["usd"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise LiveDataError(f"Unexpected price payload from CoinGecko: {data}") from exc
+
+    return price
 
 
 def _fetch_difficulty_and_height() -> tuple[float, Optional[int]]:
@@ -60,6 +65,7 @@ def _fetch_difficulty_and_height() -> tuple[float, Optional[int]]:
     try:
         height_resp = requests.get(settings.MEMPOOL_BLOCKTIP_URL, timeout=10)
         height_resp.raise_for_status()
+        # mempool.space /api/v1/blocks/tip-height returns a bare JSON integer
         height = int(height_resp.json())
     except Exception:
         height = None
