@@ -21,25 +21,23 @@ def _add_years_safe(d: date, years: int) -> date:
 class SiteInputs:
     """Container for site-level configuration.
 
-    This is kept for backwards compatibility with core.site_metrics,
-    while also supporting the new go-live and project duration fields.
+    Designed for use by core.site_metrics and downstream tabs.
     """
 
+    # Project timeline
     go_live_date: date
     project_years: int
     project_end_date: date
 
+    # Site capacity & operating costs
     site_power_kw: float
     electricity_cost: float
     uptime_pct: int
     cooling_overhead_pct: int
 
-    capex_client_pct: int
-
-    # You can add convenience properties later if needed, e.g.:
-    # @property
-    # def uptime_fraction(self) -> float:
-    #     return self.uptime_pct / 100.0
+    # Commercial model
+    commercial_model: str
+    capex_client_pct: int  # implied by the chosen model
 
 
 def render_site_inputs() -> SiteInputs:
@@ -48,13 +46,13 @@ def render_site_inputs() -> SiteInputs:
     Returns
     -------
     SiteInputs
-        Object containing power, tariffs, project dates, and investment split.
+        Object containing power, tariffs, project dates, and commercial model.
     """
 
     st.header("1. Your Site Setup")
     st.markdown(
         "Provide the basic information about your mining site. "
-        "These settings are used to estimate capacity, revenue, cost and "
+        "These settings are used to estimate capacity, revenue, costs and "
         "project-level financials."
     )
 
@@ -90,7 +88,7 @@ def render_site_inputs() -> SiteInputs:
     st.divider()
 
     # ----------------------------------------------------------------------
-    # Site capacity and costs
+    # Site capacity and operating costs
     # ----------------------------------------------------------------------
     st.subheader("Site Capacity & Operating Costs")
 
@@ -135,20 +133,39 @@ def render_site_inputs() -> SiteInputs:
     st.divider()
 
     # ----------------------------------------------------------------------
-    # Investment structure
+    # Commercial model (client-facing)
     # ----------------------------------------------------------------------
-    st.subheader("Investment Structure")
+    st.subheader("Commercial Model")
 
-    capex_client_pct = st.slider(
-        "Client CapEx ownership (%)",
-        min_value=0,
-        max_value=100,
-        value=50,
+    commercial_model = st.radio(
+        "Select your preferred commercial model",
+        [
+            "Client-owned hardware",
+            "Operator-owned hardware",
+            "Hybrid partnership (shared ownership)",
+        ],
         help=(
-            "Used for modelling revenue share and tax treatment. "
-            "0% means you own all hardware; 100% means the client owns all hardware."
+            "This determines how hardware costs and revenue are shared between "
+            "you and the operator."
         ),
     )
+
+    if commercial_model == "Hybrid partnership (shared ownership)":
+        capex_client_pct = st.slider(
+            "Client share of hardware cost (%)",
+            min_value=0,
+            max_value=100,
+            value=50,
+            help=(
+                "Percentage of the mining hardware purchased by the client. "
+                "Revenue share will typically follow this split."
+            ),
+        )
+    elif commercial_model == "Client-owned hardware":
+        capex_client_pct = 100
+    else:
+        # Operator-owned hardware
+        capex_client_pct = 0
 
     # ----------------------------------------------------------------------
     # Build and return the SiteInputs object
@@ -161,6 +178,7 @@ def render_site_inputs() -> SiteInputs:
         electricity_cost=electricity_cost,
         uptime_pct=uptime_pct,
         cooling_overhead_pct=cooling_overhead_pct,
+        commercial_model=commercial_model,
         capex_client_pct=capex_client_pct,
     )
 

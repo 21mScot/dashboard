@@ -13,6 +13,7 @@ from src.config.settings import LIVE_DATA_CACHE_TTL_S
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
 from src.core.site_metrics import compute_site_metrics
 from src.ui.miner_selection import render_miner_selection
+from src.ui.scenarios import render_scenarios_and_risk
 from src.ui.site_inputs import render_site_inputs
 
 
@@ -22,12 +23,11 @@ from src.ui.site_inputs import render_site_inputs
 )
 def load_live_network_data() -> NetworkData | None:
     """
-    Cached wrapper around get_live_network_data.
+    Try to fetch live BTC price + difficulty on every run.
+    If it fails, show a structured warning and fall back to static assumptions.
 
-    Returns live NetworkData on success, or a NetworkData built from static
-    assumptions if the live call fails.
-
-    Returns None only if something very unexpected happens.
+    Note: get_live_network_data() is cached (TTL in settings.LIVE_DATA_TTL_HOURS),
+    so this will not hammer external APIs on every UI interaction.
     """
     static_price = settings.DEFAULT_BTC_PRICE_USD
     static_diff = settings.DEFAULT_NETWORK_DIFFICULTY
@@ -82,8 +82,14 @@ def render_dashboard() -> None:
         last_updated_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         with st.sidebar.expander("Live BTC network data", expanded=True):
             st.metric("BTC price (USD)", f"${network_data.btc_price_usd:,.0f}")
-            st.metric("Difficulty", f"{network_data.difficulty:,.0f}")
+            # We keep difficulty in the model but hide it from the main UI.
+            # st.metric("Difficulty", f"{network_data.difficulty:,.0f}")
             st.metric("Block subsidy", f"{network_data.block_subsidy_btc} BTC")
+            st.caption(
+                "Network difficulty is used under the hood to derive BTC/day "
+                "and revenue, but is not shown directly to keep the UI "
+                "client-friendly."
+            )
             st.caption(f"Last updated: {last_updated_utc}")
     else:
         st.sidebar.info(
@@ -95,7 +101,11 @@ def render_dashboard() -> None:
     # TABS SETUP
     # -------------------------------------------------------------------------
     tab_overview, tab_scenarios, tab_assumptions = st.tabs(
-        ["Overview", "Scenarios & Risk", "Assumptions & Methodology"]
+        [
+            "📊 Overview",
+            "🎯 Scenarios & Risk",
+            "📋 Assumptions & Methodology",
+        ]
     )
 
     # -------------------------------------------------------------------------
@@ -118,8 +128,8 @@ def render_dashboard() -> None:
             site_inputs = render_site_inputs()
 
         with right:
-            # Pass through network_data so miner comparison
-            # can use live price/difficulty.
+            # pass through network_data so miner comparison
+            # can use live price/difficulty
             selected_miner = render_miner_selection(network_data=network_data)
 
         # -----------------------------------------------------------------
@@ -127,7 +137,7 @@ def render_dashboard() -> None:
         # -----------------------------------------------------------------
         metrics = compute_site_metrics(site_inputs, selected_miner)
 
-        # 🔹 Hook for daily BTC & revenue UI (SEC-aware) if/when needed:
+        # 🔹 daily BTC & revenue UI (SEC-aware) can go here later
         # render_daily_revenue(metrics)
 
         st.markdown("---")
@@ -168,12 +178,18 @@ def render_dashboard() -> None:
     # SCENARIOS & RISK TAB
     # -------------------------------------------------------------------------
     with tab_scenarios:
-        st.subheader("Scenarios & Risk")
-        st.info("Future BTC price and difficulty scenarios will be shown here.")
+        # Use the same site_inputs, selected_miner and network_data
+        # to drive the new site-level scenarios engine.
+        st.subheader("🎯 Scenarios & Risk")
+        render_scenarios_and_risk(
+            site=site_inputs,
+            miner=selected_miner,
+            network_data=network_data,
+        )
 
     # -------------------------------------------------------------------------
     # ASSUMPTIONS & METHODOLOGY TAB
     # -------------------------------------------------------------------------
     with tab_assumptions:
-        st.subheader("Assumptions & Methodology")
+        st.subheader("📋 Assumptions & Methodology")
         st.info("Document data sources, formulas, and limitations here.")
