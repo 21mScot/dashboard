@@ -1,12 +1,55 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 import streamlit as st
 
+from src.config import settings
+from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
 from src.core.site_metrics import compute_site_metrics
 from src.ui.miner_selection import render_miner_selection
 from src.ui.site_inputs import render_site_inputs
+
+
+def load_live_network_data() -> NetworkData | None:
+    """
+    Try to fetch live BTC price + difficulty on every run.
+    If it fails, show a structured warning and fall back to static assumptions.
+    """
+    try:
+        return get_live_network_data()
+
+    except LiveDataError as e:
+        # 1. Fallback static values from settings.py
+        static_price = settings.DEFAULT_BTC_PRICE_USD
+        static_diff = settings.DEFAULT_DIFFICULTY
+        static_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
+
+        # 2. Main warning box (no HTML, just markdown)
+        warning_md = (
+            "**Could not load live BTC network data — "
+            "using static assumptions instead.**\n\n"
+            "**Fallback values now in use:**\n"
+            f"- BTC price (USD): `${static_price:,.0f}`\n"
+            f"- Difficulty: `{static_diff:,}`\n"
+            f"- Block subsidy: `{static_subsidy} BTC`\n"
+        )
+
+        st.warning(warning_md, icon="⚠️")
+
+        # 3. Collapsible technical details rendered with raw HTML, just below
+        details_html = f"""
+<details>
+  <summary><strong>Technical details</strong></summary>
+  <pre style="white-space: pre-wrap; font-size: 0.8rem; margin-top: 0.5rem;">
+{e}
+  </pre>
+</details>
+"""
+        st.markdown(details_html, unsafe_allow_html=True)
+
+        return None
 
 
 def render_dashboard() -> None:
@@ -14,6 +57,28 @@ def render_dashboard() -> None:
     st.title("Bitcoin Mining Feasibility Dashboard")
     st.caption("Exploring site physics, BTC production, and revenue scenarios.")
 
+    # Toggle to enable/disable live data
+    use_live = st.sidebar.toggle("Use live BTC network data", value=True)
+
+    # One place where we decide what network data the rest of the app sees
+    network_data: NetworkData | None = load_live_network_data() if use_live else None
+
+    # Sidebar: show live data summary or fallback message
+    if network_data is not None:
+        last_updated_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        with st.sidebar.expander("Live BTC network data", expanded=True):
+            st.metric("BTC price (USD)", f"${network_data.btc_price_usd:,.0f}")
+            st.metric("Difficulty", f"{network_data.difficulty:,.0f}")
+            st.metric("Block subsidy", f"{network_data.block_subsidy_btc} BTC")
+            st.caption(f"Last updated: {last_updated_utc}")
+    else:
+        st.sidebar.info(
+            "Using static default BTC price and difficulty (live data not available)."
+        )
+
+    # -------------------------------------------------------------------------
+    # TABS SETUP
+    # -------------------------------------------------------------------------
     tab_overview, tab_scenarios, tab_assumptions = st.tabs(
         ["Overview", "Scenarios & Risk", "Assumptions & Methodology"]
     )
@@ -38,7 +103,10 @@ def render_dashboard() -> None:
             site_inputs = render_site_inputs()
 
         with right:
-            selected_miner = render_miner_selection()
+            # pass through network_data so miner comparison
+            # can use live price/difficulty
+
+            selected_miner = render_miner_selection(network_data=network_data)
 
         # -----------------------------------------------------------------
         # From one ASIC to the whole site
@@ -55,10 +123,7 @@ def render_dashboard() -> None:
             f"{metrics.asics_supported}",
             help="Number of miners that fit within the site's power budget.",
         )
-        col_b.metric(
-            "Power per ASIC",
-            f"{metrics.asic_power_kw:.2f} kW",
-        )
+        col_b.metric("Power per ASIC", f"{metrics.asic_power_kw:.2f} kW")
         col_c.metric(
             "Site power used",
             f"{metrics.site_power_used_kw:.1f} / {metrics.site_power_kw:.1f} kW",
@@ -76,13 +141,6 @@ def render_dashboard() -> None:
             "connected to the Site Economy Calculator (SEC) backend. For now, "
             "we're focusing on the site physics (how many miners fit, and power usage)."
         )
-        # BTC/day placeholders – ready to be wired to SEC backend
-        st.markdown("### BTC production (to be wired to SEC backend)")
-        st.info(
-            "Per-ASIC and per-site BTC/day will be populated once this dashboard is "
-            "connected to the Site Economy Calculator (SEC) backend. For now, "
-            "we're focusing on the site physics (how many miners fit, and power usage)."
-        )
 
         # -----------------------------------------------------------------
         # Debug: raw objects (for development + walkthroughs)
@@ -92,7 +150,6 @@ def render_dashboard() -> None:
             st.json(asdict(site_inputs))
 
             st.markdown("**Selected miner**")
-            # MinerOption is also a dataclass, so asdict works here too
             st.json(asdict(selected_miner))
 
             st.markdown("**Derived site metrics**")
