@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pandas as pd
 import streamlit as st
 
-from src.config import settings
 from src.core.live_data import NetworkData
 from src.ui.miner_selection import MinerOption
+from src.ui.scenarios_tab import render_scenarios_tab
 from src.ui.site_inputs import SiteInputs
 
 
@@ -31,7 +30,6 @@ class SiteScenarioResult:
 
 def _compute_num_miners(site: SiteInputs, miner: MinerOption) -> int:
     """How many miners can we fit into the available site power?"""
-    # Base power draw in kW
     miner_power_kw = miner.power_w / 1000.0
     overhead_factor = 1 + site.cooling_overhead_pct / 100.0
 
@@ -54,7 +52,6 @@ def _estimate_btc_per_day_site(
     if num_miners <= 0:
         return 0.0
 
-    # miner hashrate in H/s
     miner_hashrate_hs = miner.hashrate_th * 1e12
     site_hashrate_hs = miner_hashrate_hs * num_miners
 
@@ -68,7 +65,6 @@ def _estimate_btc_per_day_site(
 
     btc_per_day_raw = share_of_network * block_subsidy_btc * blocks_per_day
 
-    # Adjust for uptime
     uptime_factor = site.uptime_pct / 100.0
     return btc_per_day_raw * uptime_factor
 
@@ -88,8 +84,6 @@ def _estimate_site_opex_per_day(
     total_power_kw = num_miners * miner_power_kw * overhead_factor
 
     uptime_factor = site.uptime_pct / 100.0
-
-    # kWh per day
     kwh_per_day = total_power_kw * 24.0 * uptime_factor
 
     return kwh_per_day * elec_cost_per_kwh
@@ -147,33 +141,28 @@ def render_scenarios_and_risk(
 ) -> None:
     """Render the Scenarios & Risk tab.
 
-    Works at site level (not per ASIC), uses:
-      - SiteInputs (power, uptime, tariffs, commercial model, dates)
-      - Selected miner
-      - Live network data if available; falls back to defaults otherwise.
+    Left: simple daily shock controls (sliders).
+    Right: Multi-year Scenario 1 (MVP) annual economics.
     """
     st.markdown("### 3. Scenarios & risk")
     st.markdown(
         "Explore how changes in Bitcoin price, network competition and "
-        "electricity cost affect site-level daily economics."
+        "electricity cost affect site-level economics."
     )
 
     # ----------- baseline from live data or static defaults -----------
-    if network_data is not None:
-        base_price = network_data.btc_price_usd
-        base_diff = network_data.difficulty
-        base_subsidy = network_data.block_subsidy_btc
-    else:
-        base_price = settings.DEFAULT_BTC_PRICE_USD
-        base_diff = settings.DEFAULT_DIFFICULTY
-        base_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
+    # Network data may be live or fallback; for now we don't need
+    # explicit base_* variables here, so we rely on network_data /
+    # defaults later where needed.
+    col_controls, col_results = st.columns([1, 4])
 
-    col_controls, col_results = st.columns([1, 2])
+    col_controls, col_results = st.columns([1, 4])
 
+    # ----------- controls (left) -----------
     with col_controls:
         st.subheader("Scenario controls")
 
-        btc_price_pct = st.slider(
+        st.slider(
             "Bitcoin price change (%)",
             min_value=-50,
             max_value=50,
@@ -184,7 +173,7 @@ def render_scenarios_and_risk(
             ),
         )
 
-        difficulty_pct = st.slider(
+        st.slider(
             "Network competition (%)",
             min_value=-30,
             max_value=50,
@@ -195,7 +184,7 @@ def render_scenarios_and_risk(
             ),
         )
 
-        elec_cost_pct = st.slider(
+        st.slider(
             "Electricity cost change (%)",
             min_value=-50,
             max_value=50,
@@ -208,88 +197,11 @@ def render_scenarios_and_risk(
             "Project duration and halving effects will be layered on later."
         )
 
-    # Derived parameters for scenario
-    scenario_price = base_price * (1 + btc_price_pct / 100.0)
-    scenario_diff = base_diff * (1 + difficulty_pct / 100.0)
-    scenario_elec_cost = site.electricity_cost * (1 + elec_cost_pct / 100.0)
-
-    # Build baseline and scenario results
-    baseline = _build_scenario_result(
-        label="Baseline",
-        site=site,
-        miner=miner,
-        btc_price_usd=base_price,
-        network_difficulty=base_diff,
-        block_subsidy_btc=base_subsidy,
-        elec_cost_per_kwh=site.electricity_cost,
-    )
-
-    scenario = _build_scenario_result(
-        label="Scenario",
-        site=site,
-        miner=miner,
-        btc_price_usd=scenario_price,
-        network_difficulty=scenario_diff,
-        block_subsidy_btc=base_subsidy,
-        elec_cost_per_kwh=scenario_elec_cost,
-    )
-
+    # ----------- Multi-year scenario (right) -----------
     with col_results:
-        st.subheader("Site-level daily economics")
-
-        if baseline.num_miners == 0:
-            st.warning(
-                "Based on the current site power and miner choice, we can't "
-                "fit any units. Increase site power or choose a smaller ASIC."
-            )
-            return
-
-        col_top_a, col_top_b, col_top_c = st.columns(3)
-        with col_top_a:
-            st.metric("Miners installed", f"{baseline.num_miners}")
-        with col_top_b:
-            st.metric("Site hashrate", f"{baseline.site_hashrate_th:,.0f} TH/s")
-        with col_top_c:
-            delta_value = scenario.profit_per_day_fiat - baseline.profit_per_day_fiat
-
-            st.metric(
-                "Scenario profit / day",
-                f"£{scenario.profit_per_day_fiat:,.2f}",
-                delta=f"£{delta_value:,.2f} vs baseline",
-            )
-
-        # Tabular comparison
-        df = pd.DataFrame(
-            [
-                {
-                    "Scenario": baseline.label,
-                    "BTC / day": baseline.btc_per_day,
-                    "Revenue / day (£)": baseline.revenue_per_day_fiat,
-                    "Opex / day (£)": baseline.opex_per_day_fiat,
-                    "Profit / day (£)": baseline.profit_per_day_fiat,
-                },
-                {
-                    "Scenario": scenario.label,
-                    "BTC / day": scenario.btc_per_day,
-                    "Revenue / day (£)": scenario.revenue_per_day_fiat,
-                    "Opex / day (£)": scenario.opex_per_day_fiat,
-                    "Profit / day (£)": scenario.profit_per_day_fiat,
-                },
-            ]
+        st.subheader("Multi-year Scenario 1 (MVP)")
+        st.caption(
+            "Annual site-level economics based on Scenario 1 assumptions. "
+            "Sliders will influence this view in a later phase."
         )
-
-        st.dataframe(
-            df.style.format(
-                {
-                    "BTC / day": "{:.5f}",
-                    "Revenue / day (£)": "£{:.2f}",
-                    "Opex / day (£)": "£{:.2f}",
-                    "Profit / day (£)": "£{:.2f}",
-                }
-            ),
-            hide_index=True,
-        )
-
-        # Optional: quick bar chart for profit comparison
-        chart_df = df.set_index("Scenario")[["Profit / day (£)"]]
-        st.bar_chart(chart_df, height=260)
+        render_scenarios_tab()
