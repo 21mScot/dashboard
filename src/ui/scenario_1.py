@@ -2,12 +2,79 @@
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import streamlit as st
 
 from src.core.scenarios_period import (
     ScenarioAnnualEconomics,
     annual_economics_to_dataframe,
 )
+
+
+def _build_scenario_1_figure(econ: ScenarioAnnualEconomics):
+    """
+    Create a dual-axis chart for Scenario 1:
+
+    - X-axis: Year
+    - Left Y-axis (fiat, £): Revenue, OpEx, Profit (EBITDA)
+    - Right Y-axis (BTC): BTC mined per year (bars)
+    """
+    years = [row.year_index for row in econ.years]
+
+    btc_mined = [row.btc_mined for row in econ.years]
+    revenue = [row.revenue_fiat for row in econ.years]
+    opex = [row.total_opex_fiat for row in econ.years]
+    profit = [row.ebitda_fiat for row in econ.years]  # EBITDA as operating profit
+
+    fig, ax1 = plt.subplots()
+
+    # --- Left axis: fiat (£) ---
+    ax1.set_xlabel("Year")
+    ax1.set_ylabel("£ (fiat)")
+
+    (line_revenue,) = ax1.plot(
+        years,
+        revenue,
+        marker="o",
+        label="Revenue (£)",
+        color="blue",
+    )
+    (line_opex,) = ax1.plot(
+        years,
+        opex,
+        marker="o",
+        label="OpEx (£)",
+        color="red",
+    )
+    (line_profit,) = ax1.plot(
+        years,
+        profit,
+        marker="o",
+        label="Profit (£)",
+        color="green",
+    )
+
+    ax1.grid(True, axis="y", linestyle="--", alpha=0.3)
+
+    # --- Right axis: BTC ---
+    ax2 = ax1.twinx()
+    ax2.set_ylabel("BTC mined")
+
+    bars_btc = ax2.bar(
+        years,
+        btc_mined,
+        alpha=0.3,
+        label="BTC mined",
+        color="grey",
+    )
+
+    # --- Legend (combine both axes) ---
+    handles = [line_revenue, line_opex, line_profit, bars_btc]
+    labels = [h.get_label() for h in handles]
+    ax1.legend(handles, labels, loc="upper left")
+
+    fig.tight_layout()
+    return fig
 
 
 def render_scenario_1(econ: ScenarioAnnualEconomics) -> None:
@@ -51,13 +118,22 @@ def render_scenario_1(econ: ScenarioAnnualEconomics) -> None:
 
     st.markdown("---")
 
-    # --- Annual table ---
-    st.markdown("#### Annual economics table")
+    # --- Chart ---
+    st.markdown("#### Annual economics chart")
 
-    df = annual_economics_to_dataframe(econ)
+    fig = _build_scenario_1_figure(econ)
+    st.pyplot(fig)
 
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True,
-    )
+    st.markdown("---")
+
+    # --- Annual table in an expander ---
+    with st.expander("Show annual economics table", expanded=False):
+        st.markdown("#### Annual economics table")
+
+        df = annual_economics_to_dataframe(econ)
+
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+        )
