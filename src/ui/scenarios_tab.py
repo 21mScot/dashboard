@@ -100,9 +100,34 @@ def _build_dummy_scenario_1() -> ScenarioAnnualEconomics:
     )
 
 
+def _build_scenario_label(econ: ScenarioAnnualEconomics, base_name: str) -> str:
+    """Create a compact label for the Scenario expander.
+
+    Target format:
+        Scenario 1 – Base case · 4 yrs · 23 BTC · £1.31m revenue · 92.8% IRR
+
+    For now, we reuse avg EBITDA margin as a placeholder for IRR until
+    a full cashflow/IRR engine is wired in.
+    """
+    years = len(econ.years)
+
+    total_btc = econ.total_btc
+    total_revenue_m = econ.total_revenue / 1_000_000
+    irr_pct = econ.avg_ebitda_margin * 100.0  # placeholder
+
+    return (
+        f"{base_name} · {years} yrs · "
+        f"{total_btc:,.0f} BTC · "
+        f"£{total_revenue_m:,.2f}m revenue · "
+        f"{irr_pct:,.1f}% IRR"
+    )
+
+
 def render_scenarios_tab() -> None:
     """Render Scenario 1 annual economics inside the Scenarios tab."""
     scenario1 = _build_dummy_scenario_1()
 
-    with st.expander("Scenario 1 – Base case", expanded=True):
+    label = _build_scenario_label(scenario1, "Scenario 1 – Base case")
+
+    with st.expander(label, expanded=True):
         render_scenario_1(scenario1)

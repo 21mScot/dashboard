@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import streamlit as st
 
+from src.config import settings
 from src.core.live_data import NetworkData
 from src.ui.miner_selection import MinerOption
 from src.ui.scenarios_tab import render_scenarios_tab
@@ -26,6 +27,26 @@ class SiteScenarioResult:
 
 
 # ---------- helpers ----------
+
+
+def scenario_slider(
+    label: str,
+    min_val: int,
+    max_val: int,
+    default: int,
+    help_text: str,
+) -> int:
+    """Render a consistently styled slider for the Scenario Controls."""
+    st.markdown("<div style='margin-bottom: 1rem;'>", unsafe_allow_html=True)
+    value = st.slider(
+        label,
+        min_value=min_val,
+        max_value=max_val,
+        value=default,
+        help=help_text,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+    return value
 
 
 def _compute_num_miners(site: SiteInputs, miner: MinerOption) -> int:
@@ -151,10 +172,14 @@ def render_scenarios_and_risk(
     )
 
     # ----------- baseline from live data or static defaults -----------
-    # Network data may be live or fallback; for now we don't need
-    # explicit base_* variables here, so we rely on network_data /
-    # defaults later where needed.
-    col_controls, col_results = st.columns([1, 4])
+    if network_data is not None:
+        base_price = network_data.btc_price_usd
+        base_diff = network_data.difficulty
+        base_subsidy = network_data.block_subsidy_btc
+    else:
+        base_price = settings.DEFAULT_BTC_PRICE_USD
+        base_diff = settings.DEFAULT_DIFFICULTY
+        base_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
 
     col_controls, col_results = st.columns([1, 4])
 
@@ -162,40 +187,67 @@ def render_scenarios_and_risk(
     with col_controls:
         st.subheader("Scenario controls")
 
-        st.slider(
+        btc_price_pct = scenario_slider(
             "Bitcoin price change (%)",
-            min_value=-50,
-            max_value=50,
-            value=0,
-            help=(
+            -50,
+            50,
+            0,
+            (
                 "Apply an up/down shock to the current BTC price "
                 "to explore upside and downside scenarios."
             ),
         )
 
-        st.slider(
+        difficulty_pct = scenario_slider(
             "Network competition (%)",
-            min_value=-30,
-            max_value=50,
-            value=0,
-            help=(
+            -30,
+            50,
+            0,
+            (
                 "Represents changes in overall network difficulty. "
                 "Higher values mean more competition from other miners."
             ),
         )
 
-        st.slider(
+        elec_cost_pct = scenario_slider(
             "Electricity cost change (%)",
-            min_value=-50,
-            max_value=50,
-            value=0,
-            help="Apply a change to your electricity cost per kWh.",
+            -50,
+            50,
+            0,
+            "Apply a change to your electricity cost per kWh.",
         )
 
         st.caption(
             "These are simple shocks around today's assumptions. "
             "Project duration and halving effects will be layered on later."
         )
+
+    # ----------- derived parameters for scenario -----------
+    scenario_price = base_price * (1 + btc_price_pct / 100.0)
+    scenario_diff = base_diff * (1 + difficulty_pct / 100.0)
+    scenario_elec_cost = site.electricity_cost * (1 + elec_cost_pct / 100.0)
+
+    # We still compute baseline + scenario in case we need them later,
+    # but we don't currently show the daily table in the UI.
+    _ = _build_scenario_result(
+        label="Baseline",
+        site=site,
+        miner=miner,
+        btc_price_usd=base_price,
+        network_difficulty=base_diff,
+        block_subsidy_btc=base_subsidy,
+        elec_cost_per_kwh=site.electricity_cost,
+    )
+
+    _ = _build_scenario_result(
+        label="Scenario",
+        site=site,
+        miner=miner,
+        btc_price_usd=scenario_price,
+        network_difficulty=scenario_diff,
+        block_subsidy_btc=base_subsidy,
+        elec_cost_per_kwh=scenario_elec_cost,
+    )
 
     # ----------- Multi-year scenario (right) -----------
     with col_results:
