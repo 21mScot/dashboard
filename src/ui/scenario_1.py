@@ -9,69 +9,89 @@ from src.core.scenarios_period import (
     ScenarioAnnualEconomics,
     annual_economics_to_dataframe,
 )
+from src.ui.style import (
+    AXIS_LABEL_COLOR,
+    BAR_ALPHA,
+    COLOR_BTC,
+    COLOR_OPEX,
+    COLOR_PROFIT,
+    COLOR_REVENUE,
+    GRID_ALPHA,
+    LINE_WIDTH_PRIMARY,
+    TICK_LABEL_COLOR,
+)
 
 
 def _build_scenario_1_figure(econ: ScenarioAnnualEconomics):
-    """
-    Create a dual-axis chart for Scenario 1:
-
-    - X-axis: Year
-    - Left Y-axis (fiat, £): Revenue, OpEx, Profit (EBITDA)
-    - Right Y-axis (BTC): BTC mined per year (bars)
-    """
     years = [row.year_index for row in econ.years]
 
     btc_mined = [row.btc_mined for row in econ.years]
     revenue = [row.revenue_fiat for row in econ.years]
     opex = [row.total_opex_fiat for row in econ.years]
-    profit = [row.ebitda_fiat for row in econ.years]  # EBITDA as operating profit
+    profit = [row.ebitda_fiat for row in econ.years]
 
     fig, ax1 = plt.subplots()
 
-    # --- Left axis: fiat (£) ---
+    # --- Remove black borders (spines) ---
+    for spine in ax1.spines.values():
+        spine.set_visible(False)
+
+    # --- Left axis (fiat) ---
     ax1.set_xlabel("Year")
     ax1.set_ylabel("£ (fiat)")
 
     (line_revenue,) = ax1.plot(
         years,
         revenue,
-        marker="o",
+        linewidth=LINE_WIDTH_PRIMARY,
+        color=COLOR_REVENUE,
         label="Revenue (£)",
-        color="blue",
     )
     (line_opex,) = ax1.plot(
         years,
         opex,
-        marker="o",
+        linewidth=LINE_WIDTH_PRIMARY,
+        color=COLOR_OPEX,
         label="OpEx (£)",
-        color="red",
     )
     (line_profit,) = ax1.plot(
         years,
         profit,
-        marker="o",
+        linewidth=LINE_WIDTH_PRIMARY,
+        color=COLOR_PROFIT,
         label="Profit (£)",
-        color="green",
     )
 
-    ax1.grid(True, axis="y", linestyle="--", alpha=0.3)
+    ax1.grid(True, axis="y", linestyle="--", alpha=GRID_ALPHA)
 
-    # --- Right axis: BTC ---
+    # --- Right axis (BTC) ---
     ax2 = ax1.twinx()
+
+    for spine in ax2.spines.values():
+        spine.set_visible(False)
+
     ax2.set_ylabel("BTC mined")
 
     bars_btc = ax2.bar(
         years,
         btc_mined,
-        alpha=0.3,
+        alpha=BAR_ALPHA,
         label="BTC mined",
-        color="grey",
+        color=COLOR_BTC,
     )
 
-    # --- Legend (combine both axes) ---
-    handles = [line_revenue, line_opex, line_profit, bars_btc]
+    # --- Lighter axis labels & ticks ---
+    ax1.tick_params(axis="both", colors=TICK_LABEL_COLOR)
+    ax2.tick_params(axis="both", colors=TICK_LABEL_COLOR)
+
+    ax1.yaxis.label.set_color(AXIS_LABEL_COLOR)
+    ax2.yaxis.label.set_color(AXIS_LABEL_COLOR)
+    ax1.xaxis.label.set_color(AXIS_LABEL_COLOR)
+
+    # --- Legend (top-right, no frame) ---
+    handles = [line_profit, line_opex, line_revenue, bars_btc]
     labels = [h.get_label() for h in handles]
-    ax1.legend(handles, labels, loc="upper left")
+    ax1.legend(handles, labels, loc="upper right", frameon=False)
 
     fig.tight_layout()
     return fig
@@ -134,6 +154,6 @@ def render_scenario_1(econ: ScenarioAnnualEconomics) -> None:
 
         st.dataframe(
             df,
-            use_container_width=True,
+            width="stretch",  # replaces use_container_width=True
             hide_index=True,
         )

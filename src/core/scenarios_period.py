@@ -10,44 +10,44 @@ import pandas as pd
 
 @dataclass
 class AnnualEconomicsRow:
-    year_index: int  # 1, 2, 3, 4...
+    year_index: int
     btc_mined: float
-    btc_price_fiat: float  # GBP (or USD) per BTC
+    btc_price_fiat: float
     revenue_fiat: float
     electricity_cost_fiat: float
     other_opex_fiat: float
     total_opex_fiat: float
     ebitda_fiat: float
-    ebitda_margin: float  # 0–1 float
+    ebitda_margin: float  # as a fraction, e.g. 0.92 for 92%
 
 
 @dataclass
 class ScenarioAnnualEconomics:
-    name: str  # e.g. "Scenario 1 – Base case"
+    """Container for multi-year economics for a single scenario."""
+
+    name: str
     years: List[AnnualEconomicsRow]
 
     @property
     def total_btc(self) -> float:
-        return sum(y.btc_mined for y in self.years)
+        return sum(row.btc_mined for row in self.years)
 
     @property
     def total_revenue(self) -> float:
-        return sum(y.revenue_fiat for y in self.years)
+        return sum(row.revenue_fiat for row in self.years)
 
     @property
     def total_opex(self) -> float:
-        return sum(y.total_opex_fiat for y in self.years)
-
-    @property
-    def total_ebitda(self) -> float:
-        return sum(y.ebitda_fiat for y in self.years)
+        return sum(row.total_opex_fiat for row in self.years)
 
     @property
     def avg_ebitda_margin(self) -> float:
-        revenue = self.total_revenue
-        if revenue <= 0:
+        """Revenue-weighted average EBITDA margin."""
+        total_rev = self.total_revenue
+        if total_rev <= 0:
             return 0.0
-        return self.total_ebitda / revenue
+        weighted = sum(row.ebitda_margin * row.revenue_fiat for row in self.years)
+        return weighted / total_rev
 
 
 def annual_economics_to_dataframe(econ: ScenarioAnnualEconomics) -> pd.DataFrame:
@@ -68,4 +68,5 @@ def annual_economics_to_dataframe(econ: ScenarioAnnualEconomics) -> pd.DataFrame
             }
         )
 
-    return pd.DataFrame.from_records(records)
+    df = pd.DataFrame.from_records(records)
+    return df
