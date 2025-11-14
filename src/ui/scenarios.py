@@ -178,7 +178,7 @@ def render_scenarios_and_risk(
         base_subsidy = network_data.block_subsidy_btc
     else:
         base_price = settings.DEFAULT_BTC_PRICE_USD
-        base_diff = settings.DEFAULT_DIFFICULTY
+        base_diff = settings.DEFAULT_NETWORK_DIFFICULTY
         base_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
 
     col_controls, col_results = st.columns([1, 4])
