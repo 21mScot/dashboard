@@ -17,25 +17,71 @@ from src.ui.scenarios import render_scenarios_and_risk
 from src.ui.site_inputs import render_site_inputs
 
 
+# ---------------------------------------------------------
+# Difficulty formatter (UI-only, does NOT affect calculations)
+# ---------------------------------------------------------
+def format_engineering(x: float | int | str) -> str:
+    """
+    Convert numeric difficulty to human-friendly engineering notation:
+    - trillions (T)
+    - billions (B)
+    - millions (M)
+    Always returns a string.
+    """
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return "N/A"
+
+    if x >= 1e12:
+        return f"{x / 1e12:.3g} T"
+    elif x >= 1e9:
+        return f"{x / 1e9:.3g} B"
+    elif x >= 1e6:
+        return f"{x / 1e6:.3g} M"
+    else:
+        return f"{x:.3g}"
+
+
+# ---------------------------------------------------------
+# Load *effective* network data (live if possible, else static)
+# This is the ONLY place the decision live vs static is made.
+# ---------------------------------------------------------
 @st.cache_data(
     ttl=LIVE_DATA_CACHE_TTL_S,
-    show_spinner="Loading live BTC network data...",
+    show_spinner="Loading BTC network data...",
 )
-def load_live_network_data() -> NetworkData | None:
+def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
     """
-    Try to fetch live BTC price + difficulty on every run.
-    If it fails, show a structured warning and fall back to static assumptions.
+    Returns a tuple of:
+      - NetworkData: the data that WILL be used everywhere in the app
+      - bool:       True if live data was successfully loaded, False if static
 
-    Note: get_live_network_data() is cached (TTL in settings.LIVE_DATA_TTL_HOURS),
-    so this will not hammer external APIs on every UI interaction.
+    Single source of truth: whatever this returns is used both for
+    calculations and for display.
     """
     static_price = settings.DEFAULT_BTC_PRICE_USD
     static_diff = settings.DEFAULT_NETWORK_DIFFICULTY
     static_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
 
+    # If the user has explicitly disabled live data, short-circuit to static.
+    if not use_live:
+        static_data = NetworkData(
+            btc_price_usd=float(static_price),
+            difficulty=float(static_diff),
+            block_subsidy_btc=float(static_subsidy),
+            block_height=None,
+        )
+        return static_data, False
+
+    # Otherwise, attempt to fetch live data.
     try:
-        return get_live_network_data()
+        live_data = get_live_network_data()
+        return live_data, True
+
     except LiveDataError as e:
+        # Live was requested but failed: show a structured warning,
+        # then fall back to static assumptions.
         warning_md = textwrap.dedent(
             "**Could not load live BTC network data — "
             "using static assumptions instead.**\n\n"
@@ -51,52 +97,76 @@ def load_live_network_data() -> NetworkData | None:
             "```\n"
             "</details>\n"
         )
-
         st.warning(warning_md, icon="⚠️")
 
-        return NetworkData(
-            btc_price_usd=static_price,
-            difficulty=static_diff,
-            block_subsidy_btc=static_subsidy,
+        static_data = NetworkData(
+            btc_price_usd=float(static_price),
+            difficulty=float(static_diff),
+            block_subsidy_btc=float(static_subsidy),
             block_height=None,
         )
+        return static_data, False
 
     except Exception as e:
+        # Any unexpected error: log it to the UI and fall back to static.
         st.error(f"Unexpected error while loading network data: {e}")
-        return None
+        static_data = NetworkData(
+            btc_price_usd=float(static_price),
+            difficulty=float(static_diff),
+            block_subsidy_btc=float(static_subsidy),
+            block_height=None,
+        )
+        return static_data, False
 
 
+# ---------------------------------------------------------
+# Main dashboard layout
+# ---------------------------------------------------------
 def render_dashboard() -> None:
-    """Top-level layout for the Bitcoin Mining ROI dashboard."""
     st.title("Bitcoin Mining Feasibility Dashboard")
     st.caption("Exploring site physics, BTC production, and revenue scenarios.")
 
-    # Sidebar: allow switching live data ON/OFF
-    use_live = st.sidebar.toggle("Use live BTC network data", value=True)
+    # User intent: do they want to use live data?
+    requested_live = st.sidebar.toggle("Use live BTC network data", value=True)
 
-    network_data: NetworkData | None = load_live_network_data() if use_live else None
+    # Single source of truth: effective network data for the whole app.
+    network_data, is_live = load_network_data(requested_live)
 
-    # Sidebar: show live data or fallback
-    if network_data is not None:
-        last_updated_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        with st.sidebar.expander("Live BTC network data", expanded=True):
-            st.metric("BTC price (USD)", f"${network_data.btc_price_usd:,.0f}")
-            st.metric("Block subsidy", f"{network_data.block_subsidy_btc} BTC")
-            st.caption(
-                "Network difficulty is used under the hood to derive BTC/day "
-                "and revenue, but is not shown directly to keep the UI "
-                "client-friendly."
-            )
-            st.caption(f"Last updated: {last_updated_utc}")
-    else:
+    # ----------- SIDEBAR STATUS + METRICS -----------
+    if is_live:
+        st.sidebar.success("Using LIVE BTC network data")
+    elif requested_live:
+        # User asked for live, but we fell back to static.
         st.sidebar.info(
-            "Using static default BTC price and difficulty "
-            "(live data not available)."
+            "Using static BTC price and difficulty (live data unavailable)."
         )
+    else:
+        # User turned live data off.
+        st.sidebar.info("Using static BTC price and difficulty (live data disabled).")
 
-    # -------------------------------------------------------------------------
+    last_updated_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    with st.sidebar.expander("BTC network data in use", expanded=True):
+        st.metric("BTC price (USD)", f"${network_data.btc_price_usd:,.0f}")
+        st.metric("Difficulty", format_engineering(network_data.difficulty))
+        st.metric("Block subsidy", f"{network_data.block_subsidy_btc} BTC")
+        st.metric(
+            "Block height",
+            (
+                network_data.block_height
+                if network_data.block_height is not None
+                else "N/A"
+            ),
+        )
+        st.caption(
+            "These values are the ones actually used for all BTC/day and "
+            "revenue calculations in the dashboard."
+        )
+        st.caption(f"Last updated: {last_updated_utc}")
+
+    # ---------------------------------------------------------
     # TABS
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------
     tab_overview, tab_scenarios, tab_assumptions = st.tabs(
         [
             "📊 Overview",
@@ -105,9 +175,9 @@ def render_dashboard() -> None:
         ]
     )
 
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------
     # OVERVIEW TAB
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------
     with tab_overview:
         st.subheader("Headline metrics")
         col1, col2, col3, col4 = st.columns(4)
@@ -120,11 +190,10 @@ def render_dashboard() -> None:
         st.markdown("## Site setup & miner selection")
 
         left, right = st.columns(2)
-
         with left:
             site_inputs = render_site_inputs()
-
         with right:
+            # Pass the same effective network_data that we also display.
             selected_miner = render_miner_selection(network_data=network_data)
 
         metrics = compute_site_metrics(site_inputs, selected_miner)
@@ -159,19 +228,64 @@ def render_dashboard() -> None:
             st.markdown("**Derived site metrics**")
             st.json(asdict(metrics))
 
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------
     # SCENARIOS & RISK TAB
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------
     with tab_scenarios:
         render_scenarios_and_risk(
             site=site_inputs,
             miner=selected_miner,
-            network_data=network_data,
+            network_data=network_data,  # same effective data
         )
 
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------
     # ASSUMPTIONS & METHODOLOGY TAB
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------
     with tab_assumptions:
         st.subheader("📋 Assumptions & Methodology")
-        st.info("Document data sources, formulas, and limitations here.")
+
+        st.markdown("### Network data modes")
+
+        st.markdown(
+            """
+We use a single set of BTC network parameters for all calculations in this dashboard.  
+Those parameters come from one of three modes:
+
+- **Live mode**  
+  - Source: external APIs (CoinGecko for BTC price, Blockchain.info for difficulty, Mempool for block height).  
+  - When used: when *Use live BTC network data* is enabled **and** all live calls succeed.  
+  - Effect: all BTC/day and revenue calculations use the latest network values.
+
+- **Static mode (user-selected)**  
+  - Source: fixed defaults defined in the app settings.  
+  - When used: when the *Use live BTC network data* toggle is **off**.  
+  - Effect: calculations are based on a stable snapshot, useful for testing and repeatable comparisons.
+
+- **Static fallback mode (live unavailable)**  
+  - Source: the same fixed defaults as static mode.  
+  - When used: when the toggle is **on**, but live data cannot be loaded (e.g. no network, API error, rate limiting).  
+  - Effect: the app clearly warns that live data failed and automatically falls back to the static assumptions so the dashboard remains usable.
+
+In all three cases, the **left-hand sidebar always shows exactly the BTC price, difficulty, and block subsidy values that are actually used in the calculations.**
+            """
+        )
+
+        st.markdown("### Block subsidy")
+
+        st.markdown(
+            f"""
+- We currently assume a block subsidy of **{settings.DEFAULT_BLOCK_SUBSIDY_BTC} BTC** (post-2024 halving).  
+- This is applied uniformly across the forecast period in this POC version.  
+- Future versions may introduce a halving schedule so that long-range forecasts step down the subsidy at each halving.
+            """
+        )
+
+        st.markdown("### Other modelling notes")
+
+        st.markdown(
+            """
+- Network difficulty is treated as constant within each scenario.  
+- Transaction fees are not yet modelled explicitly; BTC/day estimates are based on block subsidy only.  
+- Electricity costs, site capacity and uptime assumptions are configurable via the **Site setup** panel.
+            """
+        )
