@@ -8,7 +8,6 @@ permissions:
   contents: read
   issues: write
   pull-requests: read
-  repository-projects: write
 
 jobs:
   set_type:
@@ -36,6 +35,7 @@ jobs:
         env:
           ISSUE_TYPE: ${{ steps.detect.outputs.type }}
         with:
+          github-token: ${{ secrets.ORG_PROJECT_TOKEN }}
           script: |
             const type = process.env.ISSUE_TYPE;
             core.info(`Applying type "${type}"`);
@@ -43,43 +43,33 @@ jobs:
             const issueNodeId = context.payload.issue.node_id;
 
             const org = "21mScot";
-            const projectTitle = "21mScot - dashboard"; // EXACT project title
+            const projectNumber = 2; // from https://github.com/orgs/21mScot/projects/2
 
-            // 1. Get all Projects v2 and find the one with this title
+            // 1. Get project + fields
             const data = await github.graphql(`
-              query($org: String!) {
+              query($org: String!, $number: Int!) {
                 organization(login: $org) {
-                  projectsV2(first: 20) {
-                    nodes {
-                      id
-                      title
-                      number
-                      fields(first: 50) {
-                        nodes {
-                          ... on ProjectV2SingleSelectField {
-                            id
-                            name
-                            options { id name }
-                          }
+                  projectV2(number: $number) {
+                    id
+                    fields(first: 50) {
+                      nodes {
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options { id name }
                         }
                       }
                     }
                   }
                 }
               }
-            `, { org });
+            `, { org, number: projectNumber });
 
-            const projects = data.organization.projectsV2.nodes;
-            core.info("Org projects: " + projects.map(p => `${p.number}:${p.title}`).join(", "));
-
-            const project = projects.find(p => p.title === projectTitle);
-
+            const project = data.organization.projectV2;
             if (!project) {
-              core.setFailed(`Project titled "${projectTitle}" not found`);
+              core.setFailed(\`No ProjectV2 found for org=\${org}, number=\${projectNumber}\`);
               return;
             }
-
-            core.info(`Using project "${project.title}" (#${project.number})`);
 
             const typeField = project.fields.nodes.find(f => f.name === "Type");
             if (!typeField) {
@@ -106,7 +96,7 @@ jobs:
             `, { project: project.id, content: issueNodeId });
 
             const itemId = addResult.addProjectV2ItemById.item.id;
-            core.info(`Added issue as project item: ${itemId}`);
+            core.info(\`Added issue as project item: \${itemId}\`);
 
             // 3. Set Type field
             await github.graphql(`
@@ -127,5 +117,4 @@ jobs:
               option: option.id
             });
 
-            core.info(`Set Type="${type}" for project item ${itemId}`);
-
+            core.info(\`Set Type="\${type}" for project item \${itemId}\`);
