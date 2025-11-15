@@ -43,33 +43,45 @@ jobs:
             const issueNodeId = context.payload.issue.node_id;
 
             const org = "21mScot";
-            const projectNumber = 2; // your Project v2 number
+            const projectTitle = "21mScot - dashboard"; // EXACT project title
 
-            // 1. Get project + fields
+            // 1. Get all Projects v2 and find the one with this title
             const data = await github.graphql(`
-              query($org: String!, $number: Int!) {
+              query($org: String!) {
                 organization(login: $org) {
-                  projectV2(number: $number) {
-                    id
-                    fields(first: 50) {
-                      nodes {
-                        ... on ProjectV2SingleSelectField {
-                          id
-                          name
-                          options { id name }
+                  projectsV2(first: 20) {
+                    nodes {
+                      id
+                      title
+                      number
+                      fields(first: 50) {
+                        nodes {
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            options { id name }
+                          }
                         }
                       }
                     }
                   }
                 }
               }
-            `, { org, number: projectNumber });
+            `, { org });
 
-            const project = data.organization.projectV2;
-            const typeField = project.fields.nodes.find(
-              f => f.name === "Type"
-            );
+            const projects = data.organization.projectsV2.nodes;
+            core.info("Org projects: " + projects.map(p => `${p.number}:${p.title}`).join(", "));
 
+            const project = projects.find(p => p.title === projectTitle);
+
+            if (!project) {
+              core.setFailed(`Project titled "${projectTitle}" not found`);
+              return;
+            }
+
+            core.info(`Using project "${project.title}" (#${project.number})`);
+
+            const typeField = project.fields.nodes.find(f => f.name === "Type");
             if (!typeField) {
               core.setFailed('Project field "Type" not found');
               return;
@@ -116,3 +128,4 @@ jobs:
             });
 
             core.info(`Set Type="${type}" for project item ${itemId}`);
+
