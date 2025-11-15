@@ -1,0 +1,112 @@
+name: Assign Type to Project Items
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  contents: read
+  pull-requests: read
+  project: write
+
+jobs:
+  set_type:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Detect type from issue body
+        id: detect
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || "";
+            let type = null;
+
+            if (body.includes("<!-- type: bug -->")) type = "Bug";
+            else if (body.includes("<!-- type: feature -->")) type = "Feature";
+            else if (body.includes("<!-- type: story -->")) type = "Story";
+
+            core.setOutput("type", type || "");
+
+      - name: Add issue to project and set Type field
+        if: steps.detect.outputs.type != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const type = "${{ steps.detect.outputs.type }}";
+            const issueNodeId = context.payload.issue.node_id;
+
+            const org = "21mScot";
+            const projectNumber = 2; // <- your project v2 number
+
+            // 1. Get project + fields
+            const data = await github.graphql(`
+              query($org: String!, $number: Int!) {
+                organization(login: $org) {
+                  projectV2(number: $number) {
+                    id
+                    fields(first: 50) {
+                      nodes {
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options { id name }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `, { org, number: projectNumber });
+
+            const project = data.organization.projectV2;
+            const typeField = project.fields.nodes.find(
+              f => f.name === "Type"
+            );
+
+            if (!typeField) {
+              core.setFailed('Project field "Type" not found');
+              return;
+            }
+
+            const option = typeField.options.find(o => o.name === type);
+            if (!option) {
+              core.setFailed('No matching Type option: ' + type);
+              return;
+            }
+
+            // 2. Add issue to project
+            const addResult = await github.graphql(`
+              mutation($project: ID!, $content: ID!) {
+                addProjectV2ItemById(input: {
+                  projectId: $project,
+                  contentId: $content
+                }) {
+                  item { id }
+                }
+              }
+            `, { project: project.id, content: issueNodeId });
+
+            const itemId = addResult.addProjectV2ItemById.item.id;
+
+            // 3. Set Type field
+            await github.graphql(`
+              mutation($project: ID!, $item: ID!, $field: ID!, $option: ID!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $project
+                  itemId: $item
+                  fieldId: $field
+                  value: { singleSelectOptionId: $option }
+                }) {
+                  projectV2Item { id }
+                }
+              }
+            `, {
+              project: project.id,
+              item: itemId,
+              field: typeField.id,
+              option: option.id
+            });
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
