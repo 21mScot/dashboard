@@ -127,7 +127,11 @@ def render_dashboard() -> None:
     st.caption("Exploring site physics, BTC production, and revenue scenarios.")
 
     # User intent: do they want to use live data?
-    requested_live = st.sidebar.toggle("Use live BTC network data", value=True)
+    requested_live = st.sidebar.toggle(
+        "Use live BTC network data",
+        value=True,
+        key="use_live_btc_network_data_toggle",
+    )
 
     # Single source of truth: effective network data for the whole app.
     network_data, is_live = load_network_data(requested_live)
@@ -189,6 +193,7 @@ def render_dashboard() -> None:
         st.markdown("---")
         st.markdown("## Site setup & miner selection")
 
+        # --- Site inputs & miner selection ---
         left, right = st.columns(2)
         with left:
             site_inputs = render_site_inputs()
@@ -196,25 +201,75 @@ def render_dashboard() -> None:
             # Pass the same effective network_data that we also display.
             selected_miner = render_miner_selection(network_data=network_data)
 
-        metrics = compute_site_metrics(site_inputs, selected_miner)
+        # --- Derive numeric site parameters from site_inputs ---
+        # These getattr calls make us robust to slight naming differences
+        site_power_kw = getattr(site_inputs, "site_power_kw", 0.0)
+
+        electricity_cost_per_kwh_gbp = getattr(
+            site_inputs,
+            "electricity_cost_per_kwh_gbp",
+            getattr(site_inputs, "electricity_cost_per_kwh", 0.0),
+        )
+
+        uptime_pct = getattr(site_inputs, "uptime_pct", 100.0)
+        cooling_overhead_pct = getattr(site_inputs, "cooling_overhead_pct", 0.0)
+
+        # --- Compute site-level metrics from a single miner ---
+        site_metrics = compute_site_metrics(
+            miner=selected_miner,
+            network=network_data,
+            site_power_kw=site_power_kw,
+            electricity_cost_per_kwh_gbp=electricity_cost_per_kwh_gbp,
+            uptime_pct=uptime_pct,
+            cooling_overhead_pct=cooling_overhead_pct,
+        )
 
         st.markdown("---")
-        st.markdown("## From one miner to your whole site")
+        st.markdown("### From one miner to your whole site")
 
-        col_a, col_b, col_c = st.columns(3)
-        col_a.metric(
-            "ASICs supported",
-            f"{metrics.asics_supported}",
-            help="Number of miners that fit within the site's power budget.",
-        )
-        col_b.metric("Power per ASIC", f"{metrics.asic_power_kw:.2f} kW")
-        col_c.metric(
-            "Site power used",
-            f"{metrics.site_power_used_kw:.1f} / {metrics.site_power_kw:.1f} kW",
-        )
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("ASICs supported", f"{site_metrics.asics_supported}")
+            st.metric(
+                "Power per ASIC (incl. overhead)",
+                f"{site_metrics.power_per_asic_kw:.2f} kW",
+            )
+        with col2:
+            st.metric(
+                "Site power used",
+                f"{site_metrics.site_power_used_kw:.1f} / "
+                f"{site_metrics.site_power_available_kw:.1f} kW",
+            )
+            st.metric(
+                "Spare capacity",
+                f"{site_metrics.spare_capacity_kw:.1f} kW",
+            )
+        with col3:
+            st.metric("Site BTC / day", f"{site_metrics.site_btc_per_day:.5f} BTC")
+            st.metric(
+                "Site revenue / day",
+                f"${site_metrics.site_revenue_usd_per_day:,.0f} / "
+                f"£{site_metrics.site_revenue_gbp_per_day:,.0f}",
+            )
+
+        col4, col5 = st.columns(2)
+        with col4:
+            st.metric(
+                "Electricity cost / day",
+                f"£{site_metrics.site_power_cost_gbp_per_day:,.0f}",
+            )
+        with col5:
+            st.metric(
+                "Net revenue / day (GBP)",
+                f"£{site_metrics.site_net_revenue_gbp_per_day:,.0f}",
+            )
+            st.metric(
+                "Net revenue per kW / day",
+                f"£{site_metrics.net_revenue_per_kw_gbp_per_day:,.2f} / kW",
+            )
 
         st.caption(
-            f"Approx. {metrics.site_power_spare_kw:.1f} kW spare capacity remains "
+            f"Approx. {site_metrics.spare_capacity_kw:.1f} kW spare capacity remains "
             "for future expansion or overheads."
         )
 
@@ -226,7 +281,7 @@ def render_dashboard() -> None:
             st.json(asdict(selected_miner))
 
             st.markdown("**Derived site metrics**")
-            st.json(asdict(metrics))
+            st.json(asdict(site_metrics))
 
     # ---------------------------------------------------------
     # SCENARIOS & RISK TAB
