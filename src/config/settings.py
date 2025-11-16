@@ -1,4 +1,5 @@
 # src/config/settings.py
+
 # --- Live data / network constants ---
 
 MEMPOOL_BLOCKTIP_URL = "https://mempool.space/api/v1/blocks/tip-height"
@@ -21,3 +22,9 @@ BLOCK_SUBSIDY_BTC = 3.125
 DEFAULT_BTC_PRICE_USD = 90000.0
 DEFAULT_NETWORK_DIFFICULTY = 150_000_000_000_000  # placeholder example
 DEFAULT_BLOCK_SUBSIDY_BTC = BLOCK_SUBSIDY_BTC
+
+# --- Local currency / FX assumptions (used at site-economics layer) ---
+
+# Canonical engine works in USD; we convert to GBP at the site layer.
+# This is a static assumption for now and can later be replaced by a live FX feed.
+DEFAULT_USD_TO_GBP = 0.8

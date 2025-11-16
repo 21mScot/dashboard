@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Dict, Iterable, Optional
 
@@ -12,19 +13,24 @@ from src.core.live_data import NetworkData
 
 @dataclass
 class MinerOption:
-    """Represents a single ASIC miner option."""
+    """Represents a single ASIC miner option.
+
+    All pricing here is in USD. Site-level economics are responsible
+    for converting USD -> GBP (or other local currencies).
+    """
 
     name: str
     hashrate_th: float  # terahash per second
     power_w: int  # watts
     efficiency_j_per_th: float  # joules per terahash
     supplier: str | None = None
-    price_gbp: Optional[float] = None
+    price_usd: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
 # Static placeholder catalogue
 # Later we replace this with API-loaded miners + filters.
+# Prices are indicative USD values for POC purposes.
 # ---------------------------------------------------------------------------
 _STATIC_MINER_OPTIONS: Dict[str, MinerOption] = {
     "Antminer S21 (200 TH/s)": MinerOption(
@@ -33,7 +39,7 @@ _STATIC_MINER_OPTIONS: Dict[str, MinerOption] = {
         power_w=3500,
         efficiency_j_per_th=17.5,
         supplier="Bitmain",
-        price_gbp=3100.0,
+        price_usd=3100.0,
     ),
     "Whatsminer M60 (186 TH/s)": MinerOption(
         name="Whatsminer M60 (186 TH/s)",
@@ -41,7 +47,7 @@ _STATIC_MINER_OPTIONS: Dict[str, MinerOption] = {
         power_w=3425,
         efficiency_j_per_th=18.4,
         supplier="MicroBT",
-        price_gbp=2950.0,
+        price_usd=2950.0,
     ),
     "Antminer S19k Pro (120 TH/s)": MinerOption(
         name="Antminer S19k Pro (120 TH/s)",
@@ -49,9 +55,47 @@ _STATIC_MINER_OPTIONS: Dict[str, MinerOption] = {
         power_w=2760,
         efficiency_j_per_th=23.0,
         supplier="Bitmain",
-        price_gbp=1800.0,
+        price_usd=1800.0,
+    ),
+    "Whatsminer M63S++ (480 TH/s)": MinerOption(
+        name="Whatsminer M63S++ (480 TH/s)",
+        hashrate_th=480.0,
+        power_w=7200,
+        efficiency_j_per_th=15.5,
+        supplier="MicroBT",
+        price_usd=6600.0,
+    ),
+    "Whatsminer M33S (240 TH/s)": MinerOption(
+        name="Whatsminer M33S (240 TH/s)",
+        hashrate_th=240.0,
+        power_w=7260,
+        efficiency_j_per_th=30.0,
+        supplier="MicroBT",
+        price_usd=660.0,
     ),
 }
+# ---------------------------------------------------------------------------
+
+# Models available for immediate deployment
+_IMMEDIATE_ACCESS_MODELS: set[str] = {
+    "Whatsminer M63S++ (480 TH/s)",
+    "Whatsminer M33S (240 TH/s)",
+}
+
+
+# ---------------------------------------------------------------------------
+# Sorting helpers
+# ---------------------------------------------------------------------------
+def _get_efficiency_sorted_miners() -> OrderedDict[str, MinerOption]:
+    """
+    Return miners sorted by efficiency (J/TH), ascending.
+    Lower J/TH = better efficiency.
+    """
+    sorted_pairs = sorted(
+        _STATIC_MINER_OPTIONS.items(),
+        key=lambda item: item[1].efficiency_j_per_th,
+    )
+    return OrderedDict(sorted_pairs)
 
 
 def load_miner_options() -> Iterable[MinerOption]:
@@ -67,8 +111,6 @@ def load_miner_options() -> Iterable[MinerOption]:
 
 
 # ---------- helpers for live economics ----------
-
-
 def _estimate_btc_per_day(miner: MinerOption, network: NetworkData) -> float:
     """
     Very simple expected BTC/day estimate from:
@@ -76,28 +118,22 @@ def _estimate_btc_per_day(miner: MinerOption, network: NetworkData) -> float:
       - network difficulty
       - current block subsidy
     """
-    # Miner hashrate in H/s
     miner_hashrate_hs = miner.hashrate_th * 1e12
-
-    # Network hashrate in H/s
-    # difficulty * 2^32 / 600 ≈ hashes per second
     network_hashrate_hs = network.difficulty * (2**32) / 600.0
 
     share_of_network = miner_hashrate_hs / network_hashrate_hs
-    blocks_per_day = 144  # ~10 min block time
-    btc_per_day = share_of_network * network.block_subsidy_btc * blocks_per_day
+    btc_per_day = share_of_network * network.block_subsidy_btc * 144
     return btc_per_day
 
 
 def _estimate_network_hashrate_ths(network: NetworkData) -> float:
-    """
-    Derive estimated network hashrate (TH/s) from difficulty.
-    This is for display/communication only.
-    """
     network_hashrate_hs = network.difficulty * (2**32) / 600.0
-    return network_hashrate_hs / 1e12  # convert H/s -> TH/s
+    return network_hashrate_hs / 1e12
 
 
+# ---------------------------------------------------------------------------
+# UI rendering
+# ---------------------------------------------------------------------------
 def render_miner_selection(
     network_data: NetworkData | None = None,
 ) -> MinerOption:
@@ -111,19 +147,29 @@ def render_miner_selection(
         "We’ll use its hashrate, power draw and efficiency in later calculations."
     )
 
-    miner_list = list(load_miner_options())
-    options = [m.name for m in miner_list]
+    # Use miners sorted by efficiency
+    sorted_miners = _get_efficiency_sorted_miners()
+    options = list(sorted_miners.keys())
 
     selected_name = st.selectbox(
-        "ASIC model",
+        "ASIC model (sorted by efficiency — lowest J/TH first)",
         options,
         index=0,
         help="Select the ASIC model you are considering for this site.",
     )
 
-    miner_lookup = {m.name: m for m in miner_list}
-    miner = miner_lookup[selected_name]
+    miner = sorted_miners[selected_name]
 
+    # Immediate access highlight
+    if selected_name in _IMMEDIATE_ACCESS_MODELS:
+        st.success(
+            "⚡ **Immediate Access Available**\n\n"
+            "This model is available for rapid deployment from our priority stock.\n"
+            "- Lead time: *Immediate–2 weeks*\n"
+            "- Great for proof-of-concepts or urgent scaling"
+        )
+
+    # Display specs
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Hashrate", f"{miner.hashrate_th:.0f} TH/s")
@@ -131,44 +177,37 @@ def render_miner_selection(
 
     with col2:
         st.metric("Efficiency", f"{miner.efficiency_j_per_th:.1f} J/TH")
-        if miner.price_gbp:
-            st.metric("Indicative price", f"£{miner.price_gbp:,.0f}")
+        if miner.price_usd:
+            st.metric("Indicative price (USD)", f"${miner.price_usd:,.0f}")
         else:
-            st.metric("Indicative price", "—")
+            st.metric("Indicative price (USD)", "—")
 
     if miner.supplier:
         st.caption(f"Supplier: {miner.supplier}")
 
     st.caption(
-        "Specs are indicative and can be refined from vendor data or live APIs "
-        "in a later iteration."
+        "Specs and prices are indicative only. They can be refined from vendor "
+        "quotes or live APIs in a later iteration."
     )
 
-    # ---------- live BTC / revenue estimate for the selected miner ----------
+    # Live network calculations
     if network_data is not None:
         st.markdown("#### Live network estimate for this miner")
 
         btc_per_day = _estimate_btc_per_day(miner, network_data)
-        revenue_usd_per_day = btc_per_day * network_data.btc_price_usd
+        revenue_usd = btc_per_day * network_data.btc_price_usd
 
         col_a, col_b = st.columns(2)
         with col_a:
             st.metric("BTC / day (live)", f"{btc_per_day:.5f} BTC")
         with col_b:
-            st.metric(
-                "Revenue / day (USD, live)",
-                f"${revenue_usd_per_day:,.2f}",
-            )
+            st.metric("Revenue / day (USD, live)", f"${revenue_usd:,.2f}")
 
-        # Small-footprint transparency: show derived network hashrate with a tooltip
         network_hashrate_ths = _estimate_network_hashrate_ths(network_data)
         st.metric(
             "Estimated network hashrate",
             f"{network_hashrate_ths:,.0f} TH/s",
-            help=(
-                "Derived from current Bitcoin difficulty, target block time "
-                "(10 minutes) and a protocol constant (2^32)."
-            ),
+            help="Derived from current Bitcoin difficulty.",
         )
     else:
         st.info(
@@ -176,5 +215,4 @@ def render_miner_selection(
             "We’re using static assumptions elsewhere in the app."
         )
 
-    # 👇 important: always return a MinerOption, regardless of live data
     return miner
