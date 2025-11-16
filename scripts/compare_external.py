@@ -1,6 +1,7 @@
 # scripts/compare_external.py
 import sys
 from pathlib import Path
+
 from src.config import settings
 from src.core.live_data import NetworkData
 from src.core.miner_economics import compute_miner_economics
