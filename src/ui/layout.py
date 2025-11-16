@@ -244,6 +244,9 @@ def render_dashboard() -> None:
     with tab_assumptions:
         st.subheader("📋 Assumptions & Methodology")
 
+        # -----------------------------------------------------
+        # NETWORK DATA MODES
+        # -----------------------------------------------------
         st.markdown("### Network data modes")
 
         st.markdown(
@@ -252,40 +255,109 @@ We use a single set of BTC network parameters for all calculations in this dashb
 Those parameters come from one of three modes:
 
 - **Live mode**  
-  - Source: external APIs (CoinGecko for BTC price, Blockchain.info for difficulty, Mempool for block height).  
-  - When used: when *Use live BTC network data* is enabled **and** all live calls succeed.  
-  - Effect: all BTC/day and revenue calculations use the latest network values.
+  - Source: external APIs  
+    - BTC price → CoinGecko  
+    - Difficulty → Blockchain.info  
+    - Block height → Mempool.space  
+  - When used: when *Use live BTC network data* is enabled **and** all API calls succeed.  
+  - Effect: all BTC/day and revenue calculations use the latest available network values.
 
 - **Static mode (user-selected)**  
   - Source: fixed defaults defined in the app settings.  
   - When used: when the *Use live BTC network data* toggle is **off**.  
-  - Effect: calculations are based on a stable snapshot, useful for testing and repeatable comparisons.
+  - Effect: calculations are based on a stable snapshot, useful for testing, demonstrations and repeatable comparisons.
 
 - **Static fallback mode (live unavailable)**  
   - Source: the same fixed defaults as static mode.  
-  - When used: when the toggle is **on**, but live data cannot be loaded (e.g. no network, API error, rate limiting).  
-  - Effect: the app clearly warns that live data failed and automatically falls back to the static assumptions so the dashboard remains usable.
+  - When used: when the toggle is **on**, but live data cannot be loaded  
+    (e.g., offline, rate-limited, API issues).  
+  - Effect: the app clearly warns that live data failed and automatically falls back  
+    to static assumptions so the dashboard remains usable.
 
-In all three cases, the **left-hand sidebar always shows exactly the BTC price, difficulty, and block subsidy values that are actually used in the calculations.**
+In all three cases, the **left-hand sidebar always displays the exact BTC price, difficulty, and block subsidy values that the model actually uses**.
             """
         )
 
+        # -----------------------------------------------------
+        # BLOCK SUBSIDY
+        # -----------------------------------------------------
         st.markdown("### Block subsidy")
 
         st.markdown(
             f"""
 - We currently assume a block subsidy of **{settings.DEFAULT_BLOCK_SUBSIDY_BTC} BTC** (post-2024 halving).  
-- This is applied uniformly across the forecast period in this POC version.  
-- Future versions may introduce a halving schedule so that long-range forecasts step down the subsidy at each halving.
+- This subsidy is applied uniformly across the entire forecast period in this proof-of-concept version.  
+- Future versions may introduce a halving schedule so that long-range site forecasts automatically step down the subsidy at each halving event.
             """
         )
 
+        # -----------------------------------------------------
+        # EXTERNAL VALIDATION SOURCES
+        # -----------------------------------------------------
+        st.markdown("### External validation of miner economics")
+
+        st.markdown(
+            """
+To ensure the accuracy of the miner-level BTC/day and USD/day calculations, the `miner_economics` engine  
+has been validated against three independent industry sources.  
+Each plays a different role in the validation hierarchy.
+
+#### **1. WhatToMine — Primary (strict mathematical validation)**  
+- **Status:** Closed-source (not FOSS)  
+- **Why used:** Most configurable of all industry calculators.  
+- Allows exact matching of our assumptions:  
+  - Hashrate  
+  - Power draw  
+  - Bitcoin price  
+  - Difficulty  
+  - Block reward  
+  - Pool fees (set to 0%)  
+- **Result:** The 21mScot model reproduces WhatToMine values exactly when using the same inputs.  
+- **Role:** Primary benchmark for correctness of BTC/day and USD/day.
+
+#### **2. HashrateIndex — Secondary (market-realistic benchmark)**  
+- **Status:** Commercial data provider  
+- **Why used:** Provides widely viewed market profitability figures.  
+- Cannot configure difficulty/reward directly, but provides realistic revenue/day ranges.  
+- **Role:** Ensures our revenue forecasts sit within a credible, real-world range.  
+- **Note:** Minor differences are expected due to transaction fees and internal assumptions.
+
+#### **3. Braiins — Tertiary (sanity check)**  
+- **Status:** Proprietary calculation tool  
+- **Why used:** Provides an independent external view on profit/day.  
+- Does **not** allow configuring difficulty, BTC price or subsidy,  
+  and does not show BTC/day directly.  
+- **Role:** Used only for high-level sanity checking, not strict validation.
+
+#### **Validation hierarchy summary**
+
+| Source           | Purpose                    | Type of validation     | Notes |
+|------------------|---------------------------|-------------------------|-------|
+| **WhatToMine**   | Core correctness           | Strict mathematical     | Fully configurable inputs |
+| **HashrateIndex**| Market realism             | External confirmation   | Uses live market data & fees |
+| **Braiins**      | Confidence & sanity checks | Approximate validation  | Not configurable |
+
+Together, these sources provide:
+- **Mathematical correctness** (WhatToMine)  
+- **Market realism** (HashrateIndex)  
+- **External confidence** (Braiins)
+            """
+        )
+
+        # -----------------------------------------------------
+        # OTHER MODELLING NOTES
+        # -----------------------------------------------------
         st.markdown("### Other modelling notes")
 
         st.markdown(
             """
-- Network difficulty is treated as constant within each scenario.  
-- Transaction fees are not yet modelled explicitly; BTC/day estimates are based on block subsidy only.  
-- Electricity costs, site capacity and uptime assumptions are configurable via the **Site setup** panel.
+- Network difficulty is treated as constant within each scenario period.  
+- BTC/day estimates currently include **only block subsidy**, not transaction fees.  
+- Electricity costs, uptime and cooling overhead are user-configurable in the **Site setup** panel.  
+- Future iterations may include:  
+  - Transaction fee modelling  
+  - Miner-specific efficiency curves  
+  - Difficulty projection curves  
+  - Halving adjustments in long-term site forecasts  
             """
         )
