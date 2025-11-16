@@ -47,7 +47,7 @@ def compute_site_metrics(
     - network: NetworkData snapshot (can be static or live)
     - site_power_kw: available site power capacity in kW
     - electricity_cost_per_kwh_gbp: £/kWh
-    - uptime_pct: expected uptime as a percentage (e.g. 95 for 95%)
+    - uptime_pct: expected uptime as a percentage (e.g. 98 for 98%)
     - cooling_overhead_pct: % overhead applied to miner power draw
     - usd_to_gbp_rate: FX rate used to convert USD revenues to GBP
 

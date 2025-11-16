@@ -126,7 +126,7 @@ def render_miner_selection(
 ) -> MinerOption:
     """Render miner selection UI and return selected MinerOption."""
 
-    st.markdown("### 2. Miner selection")
+    st.markdown("### 2. Choose your miner model")
     st.markdown(
         "Choose an ASIC model to explore site economics. "
         "We’ll use its hashrate, power draw and efficiency in later calculations."
@@ -203,7 +203,8 @@ def render_miner_selection(
         )
     else:
         st.info(
-            "Live BTC/day and revenue unavailable — static assumptions are used elsewhere."
+            "Live BTC/day and revenue unavailable "
+            "— static assumptions are used elsewhere."
         )
 
     return miner
