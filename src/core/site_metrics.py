@@ -1,5 +1,4 @@
 # src/core/site_metrics.py
-
 from __future__ import annotations
 
 from dataclasses import dataclass

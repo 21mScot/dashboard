@@ -1,3 +1,4 @@
+# validation.md
 # Miner Economics Validation (BTC/day & USD/day)
 
 This document provides formal validation of the miner-level economics calculation engine used in the 21mScot Bitcoin Mining Dashboard. The purpose of this validation is to demonstrate full alignment with industry-standard benchmarks, specifically WhatToMine (WTM), under controlled assumptions.

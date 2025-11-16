@@ -1,3 +1,4 @@
+# src/ui/layout.py
 from __future__ import annotations
 
 import textwrap
@@ -9,7 +10,7 @@ import streamlit as st
 from src.config import settings
 from src.config.settings import LIVE_DATA_CACHE_TTL_S
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
-from src.core.site_metrics import compute_site_metrics
+from src.core.site_metrics import SiteMetrics, compute_site_metrics
 from src.ui.assumptions import render_assumptions_and_methodology
 from src.ui.miner_selection import render_miner_selection
 from src.ui.scenarios import render_scenarios_and_risk
@@ -106,6 +107,62 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
 
 
 # ---------------------------------------------------------
+# Helper: derive SiteMetrics from UI inputs
+# ---------------------------------------------------------
+def build_site_metrics_from_inputs(
+    site_inputs,
+    selected_miner,
+    network_data: NetworkData,
+) -> SiteMetrics:
+    """
+    Convenience wrapper to derive SiteMetrics from the current UI state.
+
+    We use getattr() with a few fallback attribute names so this remains
+    robust even if the SiteInputs dataclass changes slightly.
+    """
+
+    # Site power (kW)
+    site_power_kw = (
+        getattr(site_inputs, "available_site_power_kw", None)
+        or getattr(site_inputs, "site_power_kw", None)
+        or 0.0
+    )
+
+    # Electricity cost (£ / kWh)
+    electricity_cost_per_kwh_gbp = (
+        getattr(site_inputs, "electricity_cost_per_kwh_gbp", None)
+        or getattr(site_inputs, "electricity_cost_gbp_per_kwh", None)
+        or getattr(site_inputs, "electricity_cost_per_kwh", None)
+        or getattr(site_inputs, "electricity_cost", None)
+        or 0.0
+    )
+
+    # Uptime (%)
+    uptime_pct = (
+        getattr(site_inputs, "expected_uptime_pct", None)
+        or getattr(site_inputs, "uptime_pct", None)
+        or 0.0
+    )
+
+    # Cooling + overhead (%)
+    cooling_overhead_pct = (
+        getattr(site_inputs, "cooling_overhead_pct", None)
+        or getattr(site_inputs, "cooling_and_overhead_pct", None)
+        or getattr(site_inputs, "cooling_overhead_percent", None)
+        or 0.0
+    )
+
+    return compute_site_metrics(
+        miner=selected_miner,
+        network=network_data,
+        site_power_kw=site_power_kw,
+        electricity_cost_per_kwh_gbp=electricity_cost_per_kwh_gbp,
+        uptime_pct=uptime_pct,
+        cooling_overhead_pct=cooling_overhead_pct,
+    )
+
+
+# ---------------------------------------------------------
 # Main dashboard
 # ---------------------------------------------------------
 def render_dashboard() -> None:
@@ -172,24 +229,11 @@ def render_dashboard() -> None:
         with right:
             selected_miner = render_miner_selection(network_data=network_data)
 
-        # Extract site parameters from SiteInputs
-        site_power_kw = getattr(site_inputs, "site_power_kw", 0.0)
-        electricity_cost_per_kwh_gbp = getattr(
-            site_inputs,
-            "electricity_cost",
-            0.0,
-        )
-        uptime_pct = getattr(site_inputs, "uptime_pct", 100.0)
-        cooling_overhead_pct = getattr(site_inputs, "cooling_overhead_pct", 0.0)
-
-        # Compute site metrics
-        site_metrics = compute_site_metrics(
-            miner=selected_miner,
-            network=network_data,
-            site_power_kw=site_power_kw,
-            electricity_cost_per_kwh_gbp=electricity_cost_per_kwh_gbp,
-            uptime_pct=uptime_pct,
-            cooling_overhead_pct=cooling_overhead_pct,
+        # Compute site metrics from the current inputs
+        site_metrics = build_site_metrics_from_inputs(
+            site_inputs=site_inputs,
+            selected_miner=selected_miner,
+            network_data=network_data,
         )
 
         st.markdown("---")
@@ -301,8 +345,10 @@ def render_dashboard() -> None:
     # SCENARIOS TAB
     # ---------------------------------------------------------
     with tab_scenarios:
+        # Pass the derived SiteMetrics into the scenarios view so it can
+        # build real project-level economics. Extra kwargs are ignored.
         render_scenarios_and_risk(
-            site=site_inputs,
+            site=site_metrics,
             miner=selected_miner,
             network_data=network_data,
         )

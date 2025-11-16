@@ -1,5 +1,4 @@
 # src/core/scenarios_period.py
-
 from __future__ import annotations
 
 from dataclasses import dataclass
