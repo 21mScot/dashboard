@@ -164,6 +164,7 @@ def build_site_metrics_from_inputs(
         electricity_cost_per_kwh_gbp=electricity_cost_per_kwh_gbp,
         uptime_pct=uptime_pct,
         cooling_overhead_pct=cooling_overhead_pct,
+        usd_to_gbp_rate=network_data.usd_to_gbp,
     )
 
 
@@ -268,21 +269,39 @@ def render_dashboard() -> None:
 
         with f1:
             st.metric(
-                "Net revenue / day",
+                "Net income / day",
                 f"£{site_metrics.site_net_revenue_gbp_per_day:,.0f}",
+                help=(
+                    "Net income / day: Gross revenue minus electricity cost for all"
+                    " ASICs on site, after applying your uptime assumption. This is "
+                    "the net income the site generates per day before tax and other "
+                    "overheads."
+                ),
             )
 
         with f2:
             st.metric(
-                "Site BTC / day",
-                f"{site_metrics.site_btc_per_day:.5f} BTC",
+                "Gross revenue / day",
+                f"£{site_metrics.site_revenue_gbp_per_day:,.0f} ("
+                f"${site_metrics.site_revenue_usd_per_day:,.0f})",
+                help=(
+                    "Gross revenue / day: We take the expected revenue for one ASIC "
+                    "(based on BTC price, difficulty, and block reward), "
+                    "multiply it by the number of ASICs running, adjust for uptime, "
+                    "and convert the result from USD to GBP using the FX rate in the "
+                    "sidebar."
+                ),
             )
 
         with f3:
             st.metric(
-                "Site revenue / day",
-                f"£{site_metrics.site_revenue_gbp_per_day:,.0f} / "
-                f"${site_metrics.site_revenue_usd_per_day:,.0f}",
+                "Electricity cost / day",
+                f"£{site_metrics.site_power_cost_gbp_per_day:,.0f}",
+                help=(
+                    "Electricity cost / day: Estimated electricity spend per day for "
+                    "running all ASICs, including cooling/overhead power. Based on "
+                    "site kWh usage, your electricity tariff (£/kWh), and uptime."
+                ),
             )
 
         # -----------------------------------------------------
@@ -295,9 +314,9 @@ def render_dashboard() -> None:
                 "Site power utilisation (%)",
                 f"{power_used_pct:.1f} %",
                 help=(
-                    f"Using {site_metrics.site_power_used_kw:.1f} kW out of "
-                    f"{site_metrics.site_power_available_kw:.1f} kW "
-                    f"({power_used_pct:.1f}% of available site capacity)."
+                    "Site power utilisation (%): How much of your available site power"
+                    " is currently being used by ASICs (including cooling/overhead). "
+                    "Calculated as used kW ÷ available kW."
                 ),
             )
 
@@ -305,35 +324,61 @@ def render_dashboard() -> None:
             st.metric(
                 "Power used (kW)",
                 f"{site_metrics.site_power_used_kw:.1f} kW",
+                help=(
+                    "Power used (kW): Total electrical load drawn by all ASICs, "
+                    "including cooling and overhead. This is the kW actually "
+                    "committed to mining when the site is fully running."
+                ),
             )
 
         with u3:
             st.metric(
                 "Power per ASIC (incl. overhead)",
                 f"{site_metrics.power_per_asic_kw:.2f} kW",
+                help=(
+                    "Power per ASIC (incl. overhead): Effective kW per ASIC including"
+                    " cooling/overhead. Calculated from the miner nameplate power "
+                    "plus the cooling/overhead percentage you set in the inputs."
+                ),
             )
 
         # -----------------------------------------------------
-        # ROW 3 — EFFICIENCY ECONOMICS
+        # ROW 3 — EFFICIENCY & SCALE
         # -----------------------------------------------------
         e1, e2, e3 = st.columns(3)
 
         with e1:
             st.metric(
-                "Net revenue per kW / day",
-                f"£{site_metrics.net_revenue_per_kw_gbp_per_day:,.2f}",
+                "Net income per MWh / day",
+                f"£{site_metrics.net_revenue_per_mwh_gbp_per_day:,.2f}",
+                help=(
+                    "Net income per MWh / day: Net income divided by the MWh of energy"
+                    " actually used per day. Shows the economic value (£/MWh) of "
+                    "routing your energy into Bitcoin mining instead of alternative "
+                    "uses."
+                ),
             )
 
         with e2:
             st.metric(
-                "Electricity cost / day",
-                f"£{site_metrics.site_power_cost_gbp_per_day:,.0f}",
+                "ASICs supported",
+                f"{site_metrics.asics_supported}",
+                help=(
+                    "ASICs supported: Maximum number of ASICs the site can support "
+                    "with the available power, after accounting for cooling/overhead."
+                    " Calculated as site power capacity ÷ power per ASIC."
+                ),
             )
 
         with e3:
             st.metric(
-                "ASICs supported",
-                f"{site_metrics.asics_supported}",
+                "BTC mined / day",
+                f"{site_metrics.site_btc_per_day:.5f} BTC",
+                help=(
+                    "BTC mined / day: Total BTC expected per day from all ASICs at the"
+                    " configured uptime, using the current network difficulty and "
+                    "block subsidy."
+                ),
             )
 
         # Footnote: spare capacity
