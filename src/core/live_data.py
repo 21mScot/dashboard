@@ -1,5 +1,4 @@
 # src/core/live_data.py
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ class NetworkData:
     btc_price_usd: float
     difficulty: float
     block_subsidy_btc: float
+    usd_to_gbp: float
     block_height: Optional[int] = None
 
 
@@ -81,6 +81,32 @@ def _fetch_difficulty_and_height() -> tuple[float, Optional[int]]:
     return difficulty, height
 
 
+def _fetch_usd_to_gbp_rate() -> float:
+    """
+    Fetch USD/GBP FX rate from a FOSS source (Frankfurter API).
+
+    Frankfurter is a free, open-source API backed by ECB rates:
+    https://www.frankfurter.app/
+    """
+    resp = requests.get(
+        "https://api.frankfurter.app/latest",
+        params={"from": "USD", "to": "GBP"},
+        headers={"User-Agent": settings.LIVE_DATA_USER_AGENT},
+        timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    try:
+        # Example payload:
+        # {"amount":1.0,"base":"USD","date":"2025-01-01","rates":{"GBP":0.79}}
+        rate = float(data["rates"]["GBP"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise LiveDataError(f"Unexpected FX payload from Frankfurter: {data}") from exc
+
+    return rate
+
+
 # ---------------------------------------------------------
 # Public API
 # ---------------------------------------------------------
@@ -97,6 +123,7 @@ def get_live_network_data() -> NetworkData:
     try:
         price = _fetch_btc_price_usd()
         difficulty, height = _fetch_difficulty_and_height()
+        usd_to_gbp = _fetch_usd_to_gbp_rate()
     except Exception as exc:
         raise LiveDataError(f"Failed to fetch live data: {exc}") from exc
 
@@ -104,5 +131,6 @@ def get_live_network_data() -> NetworkData:
         btc_price_usd=price,
         difficulty=difficulty,
         block_subsidy_btc=settings.DEFAULT_BLOCK_SUBSIDY_BTC,
+        usd_to_gbp=usd_to_gbp,
         block_height=height,
     )
