@@ -1,230 +1,320 @@
 # src/ui/scenario_1.py
+
 from __future__ import annotations
+
+import math
+from typing import List, Optional
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
 from src.config import settings
-from src.core.scenario_engine import (
-    AnnualScenarioEconomics,
-    ScenarioResult,
-)
+from src.core.capex import CapexBreakdown
+from src.core.scenario_engine import AnnualScenarioEconomics, ScenarioResult
 
 
-# ---------------------------------------------------------
-# Convert scenario years → DataFrame
-# ---------------------------------------------------------
-def _scenario_years_to_dataframe(
-    years: list[AnnualScenarioEconomics],
-) -> pd.DataFrame:
-    """
-    Convert the per-year scenario economics into a tabular form suitable
-    for display and download.
+def _format_currency(value: float) -> str:
+    if value is None or math.isnan(value):
+        return "£0"
+    return f"£{value:,.0f}"
 
-    Ordering principle:
-      - Fiat-denominated metrics first
-      - Margin (%)
-      - BTC metrics last
-    """
 
-    records = []
-    for y in years:
-        records.append(
+def _format_btc(value: float) -> str:
+    if value is None or math.isnan(value):
+        return "0 BTC"
+    return f"{value:,.3f} BTC"
+
+
+def _format_percentage(value: float) -> str:
+    return f"{value * 100.0:,.1f}%"
+
+
+def _format_years(value: float) -> str:
+    if value is None or math.isnan(value) or math.isinf(value):
+        return "No payback in project"
+    if value < 0:
+        return "N/A"
+    return f"{value:,.1f} years"
+
+
+def _build_years_dataframe(years: List[AnnualScenarioEconomics]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
             {
                 "Year": y.year_index,
-                # Fiat first
-                "Gross revenue (£)": y.revenue_gbp,
-                "Electricity cost (£)": y.electricity_cost_gbp,
-                "Other opex (£)": y.other_opex_gbp,
-                "Total opex (£)": y.total_opex_gbp,
-                "EBITDA (£)": y.ebitda_gbp,
-                "EBITDA margin (%)": y.ebitda_margin * 100.0,
-                "Client share of revenue (£)": y.client_revenue_gbp,
-                "21mScot share of revenue (£)": y.operator_revenue_gbp,
-                "Client tax (£)": y.client_tax_gbp,
-                "Net income (£)": y.client_net_income_gbp,
-                # BTC last
                 "BTC mined": y.btc_mined,
-                "BTC price (USD)": y.btc_price_usd,
+                "Revenue (GBP)": y.revenue_gbp,
+                "EBITDA (GBP)": y.ebitda_gbp,
+                "Client net income (GBP)": y.client_net_income_gbp,
+                "EBITDA margin (%)": y.ebitda_margin * 100.0,
             }
-        )
+            for y in years
+        ]
+    )
 
-    df = pd.DataFrame.from_records(records)
-    return df.set_index("Year")
 
-
-# ---------------------------------------------------------
-# Headline metrics
-# ---------------------------------------------------------
 def _render_headline_metrics(result: ScenarioResult) -> None:
     """
-    Headline metrics used during client conversation.
-
-    Ordering:
-      1. Net income (£)
-      2. Gross revenue (£)
-      3. Total OpEx (£)
-      4. Avg EBITDA margin (%)
-      5. Total BTC (project)
+    Top 4–5 numbers you’d talk to a client about for this scenario.
     """
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    total_capex = result.total_capex_gbp
+    total_btc = result.total_btc
+    total_net = result.total_client_net_income_gbp
+    payback_years = result.client_payback_years
+    roi_multiple = result.client_roi_multiple
 
-    with c1:
-        st.metric(
-            label="Net income (£)",
-            value=f"£{result.total_client_net_income_gbp:,.0f}",
-        )
+    col1, col2, col3, col4 = st.columns(4)
 
-    with c2:
-        st.metric(
-            label="Gross revenue (£)",
-            value=f"£{result.total_revenue_gbp:,.0f}",
-        )
-
-    with c3:
-        st.metric(
-            label="Total OpEx (£)",
-            value=f"£{result.total_opex_gbp:,.0f}",
-        )
-
-    with c4:
-        st.metric(
-            label="Avg EBITDA margin (%)",
-            value=f"{result.avg_ebitda_margin * 100:,.1f}",
-        )
-
-    with c5:
+    with col1:
         st.metric(
             label="Total BTC (project)",
-            value=f"{result.total_btc:,.3f}",
+            value=_format_btc(total_btc),
+        )
+
+    with col2:
+        st.metric(
+            label="Client net income (after tax)",
+            value=_format_currency(total_net),
+        )
+
+    with col3:
+        st.metric(
+            label="Payback period (client)",
+            value=_format_years(payback_years),
+        )
+
+    with col4:
+        if total_capex > 0:
+            st.metric(
+                label="ROI multiple (net / CapEx)",
+                value=f"{roi_multiple:,.2f}×",
+            )
+        else:
+            st.metric(
+                label="ROI multiple (net / CapEx)",
+                value="N/A",
+            )
+
+
+def _render_revenue_split(result: ScenarioResult) -> None:
+    """
+    Simple row explaining who gets what from gross BTC revenue.
+    """
+
+    cfg = result.config
+    client_share = cfg.client_revenue_share
+    operator_share = 1.0 - client_share
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.caption("Client share of gross BTC revenue")
+        st.write(_format_percentage(client_share))
+
+    with col2:
+        st.caption("21mScot share of gross BTC revenue")
+        st.write(_format_percentage(operator_share))
+
+    with col3:
+        st.caption("Total revenue (project)")
+        st.write(_format_currency(result.total_revenue_gbp))
+
+    with col4:
+        st.caption("Total client revenue vs operator revenue")
+        st.write(
+            f"{_format_currency(result.total_client_revenue_gbp)} "
+            f"· {_format_currency(result.total_operator_revenue_gbp)}"
         )
 
 
-# ---------------------------------------------------------
-# Annual chart: revenue, EBITDA, BTC mined
-# ---------------------------------------------------------
-def _render_revenue_chart(df: pd.DataFrame) -> None:
+def _render_yearly_chart(df: pd.DataFrame) -> None:
     """
-    Chart of annual gross revenue and EBITDA (left axis, £)
-    plus BTC mined (right axis, BTC) as a bar/histogram.
-
-    - Revenue & EBITDA share the *same* left-hand £ axis and scale.
-    - BTC mined has its own right-hand axis, with domain scaled so the
-      tallest bar reaches approximately SCENARIO_BTC_BAR_MAX_FRACTION
-      of the BTC axis height.
-
-    Visual styling is controlled by constants in settings.py.
+    Combined view:
+      - Bars: BTC mined per year (right-hand BTC axis)
+      - Lines: Revenue & EBITDA per year (left-hand GBP axis)
     """
 
-    chart_df = df.reset_index().rename(columns={"Year": "Year"})
+    if df.empty:
+        st.info("No annual data available for this scenario.")
+        return
 
-    base = alt.Chart(chart_df).encode(x=alt.X("Year:O", title="Year"))
-
-    # ---------- BTC axis scaling (right-hand axis) ----------
-
-    max_btc = float(chart_df["BTC mined"].max() or 0.0)
-    target_frac = getattr(settings, "SCENARIO_BTC_BAR_MAX_FRACTION", 0.6)
-
-    if max_btc > 0 and 0 < target_frac < 1:
-        btc_domain_max = max_btc / target_frac
+    # -------------------------------------------------------------
+    # BTC axis scaling: keep tallest bar at ~SCENARIO_BTC_BAR_MAX_FRACTION
+    # of the BTC axis height (e.g. 0.6 = 60%).
+    # -------------------------------------------------------------
+    max_btc = float(df["BTC mined"].max()) if not df["BTC mined"].empty else 0.0
+    if max_btc > 0 and 0.0 < settings.SCENARIO_BTC_BAR_MAX_FRACTION < 1.0:
+        btc_axis_max = max_btc / settings.SCENARIO_BTC_BAR_MAX_FRACTION
+        btc_scale = alt.Scale(domain=(0, btc_axis_max))
     else:
-        btc_domain_max = max_btc or 1.0
+        btc_scale = alt.Scale(nice=True)
 
-    btc_axis = alt.Axis(
-        title="BTC mined",
-        orient="right",
-        tickCount=4,
-        format=".2f",
+    # BTC bars on the RIGHT axis
+    btc_bars = (
+        alt.Chart(df)
+        .mark_bar(
+            opacity=settings.SCENARIO_BTC_BAR_OPACITY,
+            color=settings.SCENARIO_BTC_BAR_COLOR,
+        )
+        .encode(
+            x=alt.X(
+                "Year:O",
+                axis=alt.Axis(title="Year", labelAngle=0),  # labels horizontal
+            ),
+            y=alt.Y(
+                "BTC mined:Q",
+                title="BTC mined",
+                axis=alt.Axis(title="BTC mined", orient="right"),
+                scale=btc_scale,
+            ),
+        )
     )
 
-    btc_bars = base.mark_bar(
-        opacity=getattr(settings, "SCENARIO_BTC_BAR_OPACITY", 0.25),
-        color=getattr(settings, "SCENARIO_BTC_BAR_COLOR", "#E9ECF1"),
-        strokeWidth=getattr(settings, "SCENARIO_BTC_BAR_STROKE_WIDTH", 0),
-    ).encode(
-        y=alt.Y(
-            "BTC mined:Q",
-            axis=btc_axis,
-            scale=alt.Scale(domain=[0, btc_domain_max]),
-        ),
-        tooltip=[
-            "Year:O",
-            alt.Tooltip("BTC mined:Q", format=".3f", title="BTC mined"),
-        ],
+    # Revenue & EBITDA lines on the LEFT axis (GBP)
+    revenue_line = (
+        alt.Chart(df)
+        .mark_line(
+            color=settings.SCENARIO_REVENUE_LINE_COLOR,
+        )
+        .encode(
+            x="Year:O",
+            y=alt.Y(
+                "Revenue (GBP):Q",
+                axis=alt.Axis(title="Revenue / EBITDA (GBP)", orient="left"),
+            ),
+        )
     )
 
-    # ---------- Fiat lines (left-hand axis, shared) ----------
-
-    # Left axis definition (shared by revenue + EBITDA)
-    left_axis_y = alt.Y(
-        "Gross revenue (£):Q",
-        axis=alt.Axis(title="£ (fiat)", orient="left"),
+    ebitda_line = (
+        alt.Chart(df)
+        .mark_line(
+            color=settings.SCENARIO_EBITDA_LINE_COLOR,
+            strokeDash=settings.SCENARIO_EBITDA_LINE_DASH,
+        )
+        .encode(
+            x="Year:O",
+            y=alt.Y(
+                "EBITDA (GBP):Q",
+                axis=None,  # share left GBP axis; avoid duplicate/jumbled axis
+            ),
+        )
     )
 
-    revenue_line = base.mark_line(
-        point=True,
-        color=getattr(settings, "SCENARIO_REVENUE_LINE_COLOR", "#1f77b4"),
-    ).encode(
-        y=left_axis_y,
-        tooltip=[
-            "Year:O",
-            alt.Tooltip("Gross revenue (£):Q", format=",.0f"),
-            alt.Tooltip("EBITDA (£):Q", format=",.0f"),
-            alt.Tooltip("BTC mined:Q", format=".3f"),
-        ],
+    # Independent y-scales so BTC and GBP ranges don't interfere
+    chart = alt.layer(btc_bars, revenue_line, ebitda_line).resolve_scale(
+        y="independent"
     )
 
-    # EBITDA shares the same left scale; we suppress its own axis
-    ebitda_line = base.mark_line(
-        point=True,
-        color=getattr(settings, "SCENARIO_EBITDA_LINE_COLOR", "#2ca02c"),
-        strokeDash=getattr(settings, "SCENARIO_EBITDA_LINE_DASH", [4, 2]),
-    ).encode(
-        y=alt.Y("EBITDA (£):Q", axis=None),
-    )
-
-    # Make sure fiat lines share the same y-scale
-    fiat_layer = alt.layer(revenue_line, ebitda_line).resolve_scale(y="shared")
-
-    # Put BTC bars *behind* the fiat lines (Option A)
-    chart = (
-        alt.layer(btc_bars, fiat_layer)
-        .resolve_scale(y="independent")  # left (fiat) vs right (BTC)
-        .properties(height=300)
-    )
-
+    st.markdown("#### Annual gross revenue, EBITDA and BTC mined")
     st.altair_chart(chart, width="stretch")
 
 
-# ---------------------------------------------------------
-# Render full scenario panel
-# ---------------------------------------------------------
-def render_scenario_panel(result: ScenarioResult) -> None:
+def _render_yearly_table(df: pd.DataFrame) -> None:
     """
-    Render one scenario: headline metrics, chart, and detailed table.
-
-    Parent layout (scenarios_tab.py) decides how many scenarios exist
-    and how they are labelled.
+    Tabular annual breakdown for people who want to see the numbers.
     """
 
-    df = _scenario_years_to_dataframe(result.years)
+    if df.empty:
+        return
 
+    st.dataframe(
+        df.style.format(
+            {
+                "BTC mined": "{:,.3f}",
+                "Revenue (GBP)": "£{:,.0f}",
+                "EBITDA (GBP)": "£{:,.0f}",
+                "Client net income (GBP)": "£{:,.0f}",
+                "EBITDA margin (%)": "{:,.1f}%",
+            }
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+
+
+def _render_capex_breakdown(
+    result: ScenarioResult,
+    capex_breakdown: Optional[CapexBreakdown],
+) -> None:
+    """
+    Show how the client's total CapEx is built up from assumptions.
+    """
+
+    if capex_breakdown is None or capex_breakdown.total_gbp == 0:
+        st.info(
+            "CapEx breakdown is not available. Define a site with supported ASICs "
+            "on the Overview tab to see a model-based breakdown."
+        )
+        return
+
+    model_total = capex_breakdown.total_gbp
+    used_total = result.total_capex_gbp
+
+    df = pd.DataFrame(
+        [
+            ("ASICs (miners)", capex_breakdown.asic_cost_gbp),
+            ("Shipping", capex_breakdown.shipping_gbp),
+            ("Import duty", capex_breakdown.import_duty_gbp),
+            ("Spares allocation", capex_breakdown.spares_gbp),
+            ("Racking / mounting", capex_breakdown.racking_gbp),
+            ("Power & data cabling", capex_breakdown.cables_gbp),
+            ("Switchgear & protection", capex_breakdown.switchgear_gbp),
+            ("Networking & monitoring", capex_breakdown.networking_gbp),
+            ("Installation labour", capex_breakdown.installation_labour_gbp),
+            ("Certification & sign-off", capex_breakdown.certification_gbp),
+        ],
+        columns=["Component", "Cost (GBP)"],
+    )
+
+    st.dataframe(
+        df.style.format({"Cost (GBP)": "£{:,.0f}"}),
+        width="stretch",
+        hide_index=True,
+    )
+
+    st.markdown(
+        f"**Model-based CapEx total:** {_format_currency(model_total)}  \n"
+        f"**CapEx used in this scenario:** {_format_currency(used_total)}"
+    )
+
+    if abs(model_total - used_total) > model_total * 0.05:
+        st.caption(
+            "Note: the scenario uses a different CapEx value than the model-based "
+            "estimate (override applied in the control panel above)."
+        )
+
+
+def render_scenario_panel(
+    result: ScenarioResult,
+    capex_breakdown: Optional[CapexBreakdown] = None,
+) -> None:
+    """
+    Main renderer used by the Scenarios & risks tab for a single scenario.
+    """
+
+    # Headline metrics (CapEx-aware, payback, ROI, net income, BTC)
     _render_headline_metrics(result)
 
-    st.markdown("### Annual gross revenue, EBITDA and BTC mined")
-    _render_revenue_chart(df)
+    st.markdown("---")
 
-    st.markdown("### Detailed annual economics")
+    # Revenue split & totals
+    _render_revenue_split(result)
 
-    with st.expander("Show annual economics table", expanded=False):
-        st.dataframe(df.style.format(precision=2))
+    st.markdown("---")
 
-        csv = df.to_csv().encode("utf-8")
-        st.download_button(
-            label="Download annual economics as CSV",
-            data=csv,
-            file_name=f"scenario_{result.config.name}_annual_economics.csv",
-            mime="text/csv",
-        )
+    # Yearly chart + annual breakdown (expander)
+    df = _build_years_dataframe(result.years)
+
+    _render_yearly_chart(df)
+
+    # 1) Annual breakdown expander CLOSED by default
+    with st.expander("Annual breakdown", expanded=False):
+        _render_yearly_table(df)
+
+    #    st.markdown("---")
+
+    # CapEx breakdown (client investment) as an optional drill-down
+    with st.expander("CapEx breakdown (client investment)", expanded=False):
+        _render_capex_breakdown(result, capex_breakdown)

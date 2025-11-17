@@ -90,7 +90,7 @@ class AnnualScenarioEconomics:
     client_revenue_gbp: float
     operator_revenue_gbp: float  # 21mScot
 
-    # Simple defaults for now (can be enriched later)
+    # Tax & net income (client side)
     client_tax_gbp: float
     client_net_income_gbp: float
 
@@ -115,6 +115,10 @@ class ScenarioResult:
     total_client_tax_gbp: float
     total_client_net_income_gbp: float
     avg_ebitda_margin: float  # 0–1
+
+    # Simple investment metrics for the client
+    client_payback_years: float  # inf if never paid back
+    client_roi_multiple: float  # total net income / capex
 
 
 # ----------------------------------------------------------------------
@@ -226,11 +230,15 @@ def _apply_scenario_to_year(
     client_revenue_gbp = revenue_gbp * client_share
     operator_revenue_gbp = revenue_gbp - client_revenue_gbp
 
-    # Simple defaults: no tax yet, and client net income is
-    # revenue_share - client-borne opex.
+    # Client-side tax and net income
     client_opex_gbp = total_opex_gbp
-    client_tax_gbp = 0.0
-    client_net_income_gbp = client_revenue_gbp - client_opex_gbp - client_tax_gbp
+    profit_before_tax = client_revenue_gbp - client_opex_gbp
+
+    tax_rate = settings.CLIENT_CORPORATION_TAX_RATE
+    taxable_profit = max(profit_before_tax, 0.0)
+    client_tax_gbp = taxable_profit * tax_rate
+
+    client_net_income_gbp = profit_before_tax - client_tax_gbp
 
     return AnnualScenarioEconomics(
         year_index=base.year_index,
@@ -269,8 +277,7 @@ def run_scenario(
         ScenarioConfig with price/difficulty/electricity shocks and
         client revenue share.
     total_capex_gbp:
-        Total project CapEx (for now stored on the result only; can be
-        used later for ROI / payback / IRR calculations).
+        Total project CapEx (used for payback / ROI calculations).
     usd_to_gbp:
         FX rate; if None, uses settings.DEFAULT_USD_TO_GBP.
     """
@@ -291,6 +298,8 @@ def run_scenario(
             total_client_tax_gbp=0.0,
             total_client_net_income_gbp=0.0,
             avg_ebitda_margin=0.0,
+            client_payback_years=float("inf"),
+            client_roi_multiple=0.0,
         )
 
     years: List[AnnualScenarioEconomics] = []
@@ -315,6 +324,29 @@ def run_scenario(
     else:
         avg_ebitda_margin = 0.0
 
+    # Investment metrics: payback and ROI (client perspective)
+    if total_capex_gbp > 0:
+        # Payback: years until cumulative net income >= CapEx
+        cumulative = 0.0
+        payback_years = float("inf")
+
+        for y in years:
+            prev_cum = cumulative
+            cumulative += y.client_net_income_gbp
+            if cumulative >= total_capex_gbp:
+                # interpolate within the year
+                income_this_year = y.client_net_income_gbp
+                if income_this_year > 0:
+                    remaining = total_capex_gbp - prev_cum
+                    fraction_of_year = remaining / income_this_year
+                    payback_years = (y.year_index - 1) + fraction_of_year
+                break
+
+        client_roi_multiple = total_client_net_income_gbp / total_capex_gbp
+    else:
+        payback_years = float("inf")
+        client_roi_multiple = 0.0
+
     result_cfg = ScenarioConfig(
         name=name,
         price_pct=cfg.price_pct,
@@ -335,4 +367,6 @@ def run_scenario(
         total_client_tax_gbp=total_client_tax_gbp,
         total_client_net_income_gbp=total_client_net_income_gbp,
         avg_ebitda_margin=avg_ebitda_margin,
+        client_payback_years=payback_years,
+        client_roi_multiple=client_roi_multiple,
     )
