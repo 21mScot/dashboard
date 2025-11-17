@@ -61,7 +61,7 @@ _STATIC_MINER_OPTIONS: Dict[str, MinerOption] = {
         power_w=7200,
         efficiency_j_per_th=15.5,
         supplier="MicroBT",
-        price_usd=5000.0,
+        price_usd=6600.0,
     ),
     "Whatsminer M33S (240 TH/s)": MinerOption(
         name="Whatsminer M33S",
@@ -69,7 +69,7 @@ _STATIC_MINER_OPTIONS: Dict[str, MinerOption] = {
         power_w=7260,
         efficiency_j_per_th=30.0,
         supplier="MicroBT",
-        price_usd=500.0,
+        price_usd=600.0,
     ),
 }
 

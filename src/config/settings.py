@@ -75,3 +75,32 @@ CLIENT_CAPEX_FIRST_YEAR_ALLOWANCE_PCT = 1.0  # 100% of CapEx
 
 # Accounting lifetime of mining equipment for economic wear & tear.
 MINER_ACCOUNTING_LIFETIME_YEARS = 4
+
+# ---------------------------------------------------------
+# Chart styling (histogram / BTC bars)
+# ---------------------------------------------------------
+
+# Opacity for BTC mined histogram bars (0.0 – 1.0)
+SCENARIO_BTC_BAR_OPACITY = 0.25
+
+# Colour for BTC mined bars (Hex or named)
+SCENARIO_BTC_BAR_COLOR = "#E9ECF1"
+
+# Should BTC bar borders be shown?
+SCENARIO_BTC_BAR_STROKE_WIDTH = 0
+
+# Histogram / BTC mined bar style
+SCENARIO_BTC_BAR_OPACITY = 1.0  # Looks like the bars are fully opaque
+
+# Revenue line colour (if you want centralised control)
+SCENARIO_REVENUE_LINE_COLOR = "#1f77b4"  # streamlit default blue
+
+# EBITDA line colour
+SCENARIO_EBITDA_LINE_COLOR = "#2ca02c"  # greenish
+
+# EBITDA line style (solid/dashed)
+SCENARIO_EBITDA_LINE_DASH = [4, 2]  # dashed
+
+# How tall the highest BTC bar should be as a fraction of its axis height
+# e.g. 0.6 = tallest bar reaches 60% of the BTC axis
+SCENARIO_BTC_BAR_MAX_FRACTION = 0.6
