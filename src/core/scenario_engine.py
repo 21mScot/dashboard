@@ -5,67 +5,76 @@ from dataclasses import dataclass
 from typing import List
 
 from src.config import settings
-from src.core.capex_config import CapexTaxConfig, get_default_capex_tax_config
-from src.core.scenario_config import ScenarioConfig
-from src.core.site_metrics import SiteMetrics  # add near the top with other imports
+from src.core.site_metrics import SiteMetrics
 
-# ---------------------------------------------------------------------------
-# 1) Base annual inputs (what you already have from the main engine)
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# Base annual economics (pre-scenario)
+# ----------------------------------------------------------------------
 
 
 @dataclass
 class AnnualBaseEconomics:
     """
-    Mirrors the "Annual economics table" currently shown in the UI.
+    Base-case annual economics for the site, before any scenario shocks.
 
-    This has **no scenario logic** in it – it's just the base case that
-    comes from your existing physics / BTC / revenue engine.
+    These values are typically built from a SiteMetrics snapshot where each
+    year is identical in the base case (difficulty / price shocks are
+    layered on later by the scenario engine).
     """
 
-    year_index: int  # 1-based: 1, 2, 3, ...
+    year_index: int
+
+    # Core physics
     btc_mined: float
     btc_price_usd: float
 
+    # Economics in reporting currency (GBP)
     revenue_gbp: float
     electricity_cost_gbp: float
     other_opex_gbp: float
-
     total_opex_gbp: float
     ebitda_gbp: float
-    ebitda_margin: float  # e.g. 0.928 for 92.8%
+    ebitda_margin: float  # 0–1
 
 
-# ---------------------------------------------------------------------------
-# 2) Client-side tax / CapEx result per year
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# Scenario config
+# ----------------------------------------------------------------------
 
 
 @dataclass
-class ClientTaxYear:
-    year_index: int
-    ebitda_gbp: float
+class ScenarioConfig:
+    """
+    Configuration parameters for a scenario.
 
-    # Tax modelling
-    capital_allowance_gbp: float
-    taxable_profit_gbp: float
-    tax_gbp: float
-    net_income_gbp: float  # after tax
+    All percentage fields are expressed as fractions, e.g.
+      +20% = 0.20, -10% = -0.10
+    """
 
-    # For transparency
-    tax_rate: float
-    allowance_rate: float
+    name: str
+
+    # Shocks relative to base assumptions
+    price_pct: float  # +0.20 = +20% BTC price
+    difficulty_pct: float  # +0.20 = +20% harder network
+    electricity_pct: float  # +0.20 = +20% electricity cost
+
+    # Revenue share going to the client (AD operator).
+    # The remaining share (1 - client_revenue_share) goes to 21mScot.
+    client_revenue_share: float  # 0.90 = 90% of BTC revenue to client
 
 
-# ---------------------------------------------------------------------------
-# 3) Scenario economics per year
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# Scenario result structures
+# ----------------------------------------------------------------------
 
 
 @dataclass
 class AnnualScenarioEconomics:
+    """
+    Per-year economics for a given scenario after applying shocks.
+    """
+
     year_index: int
-    scenario_name: str
 
     btc_mined: float
     btc_price_usd: float
@@ -75,293 +84,48 @@ class AnnualScenarioEconomics:
     other_opex_gbp: float
     total_opex_gbp: float
     ebitda_gbp: float
-    ebitda_margin: float
+    ebitda_margin: float  # 0–1
 
     # Revenue split
     client_revenue_gbp: float
-    operator_revenue_gbp: float
+    operator_revenue_gbp: float  # 21mScot
 
-    # Client tax + net income
+    # Simple defaults for now (can be enriched later)
     client_tax_gbp: float
     client_net_income_gbp: float
 
 
-# ---------------------------------------------------------------------------
-# 4) Roll-up for one scenario
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class ScenarioResult:
+    """
+    Aggregate results for a single scenario across all project years.
+    """
+
     config: ScenarioConfig
     years: List[AnnualScenarioEconomics]
 
+    total_capex_gbp: float
+
+    # Aggregates
     total_btc: float
     total_revenue_gbp: float
     total_opex_gbp: float
-    avg_ebitda_margin: float
-
     total_client_revenue_gbp: float
     total_operator_revenue_gbp: float
-
     total_client_tax_gbp: float
     total_client_net_income_gbp: float
-
-    # Hooks for future (IRR, NPV)
-    irr_client: float | None = None
-    irr_operator: float | None = None
+    avg_ebitda_margin: float  # 0–1
 
 
-# ---------------------------------------------------------------------------
-# 5) Core transformation functions
-# ---------------------------------------------------------------------------
-
-
-def _apply_difficulty_shock_to_btc(
-    base_btc_mined: float,
-    difficulty_pct: float,
-) -> float:
-    """
-    Simple heuristic: if difficulty increases by +X%, our share of BTC
-    goes down roughly by the same proportion.
-
-    Example:
-      difficulty_pct = +0.20 -> btc_mined / 1.20
-      difficulty_pct = -0.10 -> btc_mined / 0.90
-    """
-    difficulty_multiplier = 1.0 + difficulty_pct
-    if difficulty_multiplier <= 0:
-        # Guardrail against extreme/impossible settings
-        return 0.0
-
-    return base_btc_mined / difficulty_multiplier
-
-
-def apply_scenario_to_year(
-    base: AnnualBaseEconomics,
-    cfg: ScenarioConfig,
-    usd_to_gbp: float,
-) -> AnnualScenarioEconomics:
-    """
-    Take one row of base economics and apply:
-      - price shock
-      - difficulty shock
-      - electricity price shock
-      - revenue-sharing
-
-    Pure function: no side-effects, no I/O.
-    """
-
-    # 1) Difficulty shock → BTC mined
-    btc_mined = _apply_difficulty_shock_to_btc(
-        base_btc_mined=base.btc_mined,
-        difficulty_pct=cfg.difficulty_pct,
-    )
-
-    # 2) Price shock
-    price_multiplier = 1.0 + cfg.price_pct
-    btc_price_usd = base.btc_price_usd * price_multiplier
-
-    # 3) Revenue (BTC × price × FX)
-    revenue_gbp = btc_mined * btc_price_usd * usd_to_gbp
-
-    # 4) Electricity cost shock
-    elec_multiplier = 1.0 + cfg.electricity_pct
-    electricity_cost_gbp = base.electricity_cost_gbp * elec_multiplier
-
-    # 5) Other Opex left unchanged for simplicity / transparency
-    other_opex_gbp = base.other_opex_gbp
-
-    total_opex_gbp = electricity_cost_gbp + other_opex_gbp
-    ebitda_gbp = revenue_gbp - total_opex_gbp
-    ebitda_margin = ebitda_gbp / revenue_gbp if revenue_gbp > 0 else 0.0
-
-    # 6) Revenue share split
-    client_share = cfg.client_revenue_share
-    operator_share = 1.0 - client_share
-
-    client_revenue_gbp = revenue_gbp * client_share
-    operator_revenue_gbp = revenue_gbp * operator_share
-
-    return AnnualScenarioEconomics(
-        year_index=base.year_index,
-        scenario_name=cfg.name,
-        btc_mined=btc_mined,
-        btc_price_usd=btc_price_usd,
-        revenue_gbp=revenue_gbp,
-        electricity_cost_gbp=electricity_cost_gbp,
-        other_opex_gbp=other_opex_gbp,
-        total_opex_gbp=total_opex_gbp,
-        ebitda_gbp=ebitda_gbp,
-        ebitda_margin=ebitda_margin,
-        client_revenue_gbp=client_revenue_gbp,
-        operator_revenue_gbp=operator_revenue_gbp,
-        client_tax_gbp=0.0,  # filled in later
-        client_net_income_gbp=0.0,  # filled in later
-    )
-
-
-# ---------------------------------------------------------------------------
-# 6) Client tax profile from EBITDA + CapEx
-# ---------------------------------------------------------------------------
-
-
-def compute_client_tax_profile(
-    annual_ebitda: list[float],
-    total_capex_gbp: float,
-    cfg: CapexTaxConfig | None = None,
-) -> list[ClientTaxYear]:
-    """
-    Given a list of annual EBITDA values for the *client* and a total CapEx
-    amount, compute a simple tax profile with a first-year capital allowance.
-
-    Approximations:
-      - Uses EBITDA as a proxy for taxable profit.
-      - Full first-year allowance (no carry-forward of unused pools).
-      - No loss carry-forward; taxable profit is never negative.
-    """
-
-    if cfg is None:
-        cfg = get_default_capex_tax_config()
-
-    tax_rate = cfg.corporation_tax_rate
-    allowance_rate = cfg.first_year_allowance_pct
-
-    n_years = len(annual_ebitda)
-    result: list[ClientTaxYear] = []
-
-    if n_years == 0:
-        return result
-
-    # Year 1 – apply capital allowance
-    allowance_y1 = total_capex_gbp * allowance_rate
-    ebitda_y1 = annual_ebitda[0]
-
-    taxable_profit_y1 = max(ebitda_y1 - allowance_y1, 0.0)
-    tax_y1 = taxable_profit_y1 * tax_rate
-    net_income_y1 = ebitda_y1 - tax_y1
-
-    result.append(
-        ClientTaxYear(
-            year_index=1,
-            ebitda_gbp=ebitda_y1,
-            capital_allowance_gbp=allowance_y1,
-            taxable_profit_gbp=taxable_profit_y1,
-            tax_gbp=tax_y1,
-            net_income_gbp=net_income_y1,
-            tax_rate=tax_rate,
-            allowance_rate=allowance_rate,
-        )
-    )
-
-    # Years 2..N – normal corporation tax, no new allowance
-    for i in range(1, n_years):
-        ebitda = annual_ebitda[i]
-        taxable_profit = max(ebitda, 0.0)
-        tax = taxable_profit * tax_rate
-        net_income = ebitda - tax
-
-        result.append(
-            ClientTaxYear(
-                year_index=i + 1,
-                ebitda_gbp=ebitda,
-                capital_allowance_gbp=0.0,
-                taxable_profit_gbp=taxable_profit,
-                tax_gbp=tax,
-                net_income_gbp=net_income,
-                tax_rate=tax_rate,
-                allowance_rate=0.0,
-            )
-        )
-
-    return result
-
-
-# ---------------------------------------------------------------------------
-# 7) High-level scenario runner
-# ---------------------------------------------------------------------------
-
-
-def run_scenario(
-    name: str,
-    base_years: list[AnnualBaseEconomics],
-    cfg: ScenarioConfig,
-    total_capex_gbp: float,
-    usd_to_gbp: float | None = None,
-    capex_tax_cfg: CapexTaxConfig | None = None,
-) -> ScenarioResult:
-    """
-    High-level entry point: run one scenario (base / best / worst).
-
-    This is what the UI will call.
-    """
-
-    if usd_to_gbp is None:
-        usd_to_gbp = settings.DEFAULT_USD_TO_GBP
-
-    # 1) Apply scenario shocks + revenue share
-    scenario_years: list[AnnualScenarioEconomics] = [
-        apply_scenario_to_year(base=year, cfg=cfg, usd_to_gbp=usd_to_gbp)
-        for year in base_years
-    ]
-
-    # 2) Client EBITDA per year (their revenue minus all opex)
-    client_ebitda_per_year = [
-        y.client_revenue_gbp - y.total_opex_gbp for y in scenario_years
-    ]
-
-    # 3) Tax profile based on client EBITDA + CapEx
-    tax_years = compute_client_tax_profile(
-        annual_ebitda=client_ebitda_per_year,
-        total_capex_gbp=total_capex_gbp,
-        cfg=capex_tax_cfg,
-    )
-    tax_by_year = {t.year_index: t for t in tax_years}
-
-    # 4) Merge tax back into annual scenario rows
-    for y in scenario_years:
-        tax_row = tax_by_year.get(y.year_index)
-        if tax_row:
-            y.client_tax_gbp = tax_row.tax_gbp
-            y.client_net_income_gbp = tax_row.net_income_gbp
-
-    # 5) Aggregate totals / headline metrics
-    total_btc = sum(y.btc_mined for y in scenario_years)
-    total_revenue_gbp = sum(y.revenue_gbp for y in scenario_years)
-    total_opex_gbp = sum(y.total_opex_gbp for y in scenario_years)
-
-    total_client_revenue_gbp = sum(y.client_revenue_gbp for y in scenario_years)
-    total_operator_revenue_gbp = sum(y.operator_revenue_gbp for y in scenario_years)
-
-    total_client_tax_gbp = sum(y.client_tax_gbp for y in scenario_years)
-    total_client_net_income_gbp = sum(y.client_net_income_gbp for y in scenario_years)
-
-    avg_ebitda_margin = (
-        sum(y.ebitda_margin for y in scenario_years) / len(scenario_years)
-        if scenario_years
-        else 0.0
-    )
-
-    return ScenarioResult(
-        config=cfg,
-        years=scenario_years,
-        total_btc=total_btc,
-        total_revenue_gbp=total_revenue_gbp,
-        total_opex_gbp=total_opex_gbp,
-        avg_ebitda_margin=avg_ebitda_margin,
-        total_client_revenue_gbp=total_client_revenue_gbp,
-        total_operator_revenue_gbp=total_operator_revenue_gbp,
-        total_client_tax_gbp=total_client_tax_gbp,
-        total_client_net_income_gbp=total_client_net_income_gbp,
-        irr_client=None,
-        irr_operator=None,
-    )
+# ----------------------------------------------------------------------
+# Helper: build base annual economics from SiteMetrics
+# ----------------------------------------------------------------------
 
 
 def build_base_annual_from_site_metrics(
     site: SiteMetrics,
     project_years: int,
-) -> list[AnnualBaseEconomics]:
+) -> List[AnnualBaseEconomics]:
     """
     Build a base-case annual economics series directly from the
     current SiteMetrics snapshot.
@@ -369,26 +133,27 @@ def build_base_annual_from_site_metrics(
     Assumptions:
       - SiteMetrics already includes uptime and cooling/overhead effects.
       - BTC price is implied from site_revenue_usd_per_day / site_btc_per_day.
-      - No additional difficulty or price drift is applied here; those
-        effects are modelled in the scenario engine via ScenarioConfig
-        shocks (price_pct, difficulty_pct, etc.).
+      - Each year in the *base* case is identical; price/difficulty/
+        electricity shocks are applied later via ScenarioConfig.
     """
+
+    if project_years <= 0:
+        return []
 
     # If the site can't support any ASICs or produces no BTC, bail early.
     if site.asics_supported <= 0 or site.site_btc_per_day <= 0:
         return []
 
-    # Implied BTC price in USD from site metrics (safe fallback if weird inputs).
+    # Implied BTC price in USD from site metrics
     if site.site_btc_per_day > 0:
         btc_price_usd = site.site_revenue_usd_per_day / site.site_btc_per_day
     else:
         btc_price_usd = settings.DEFAULT_BTC_PRICE_USD
 
-    base_years: list[AnnualBaseEconomics] = []
+    years: List[AnnualBaseEconomics] = []
 
     for year_idx in range(1, project_years + 1):
-        # For now we treat each year as identical in the base case.
-        # Difficulty / price shocks are applied later by the scenario engine.
+        # Base physics: same each year before scenario shocks
         btc_mined = site.site_btc_per_day * 365.0
 
         revenue_gbp = site.site_revenue_gbp_per_day * 365.0
@@ -402,7 +167,7 @@ def build_base_annual_from_site_metrics(
         ebitda_gbp = revenue_gbp - total_opex_gbp
         ebitda_margin = ebitda_gbp / revenue_gbp if revenue_gbp > 0 else 0.0
 
-        base_years.append(
+        years.append(
             AnnualBaseEconomics(
                 year_index=year_idx,
                 btc_mined=btc_mined,
@@ -416,4 +181,158 @@ def build_base_annual_from_site_metrics(
             )
         )
 
-    return base_years
+    return years
+
+
+# ----------------------------------------------------------------------
+# Core scenario engine
+# ----------------------------------------------------------------------
+
+
+def _apply_scenario_to_year(
+    base: AnnualBaseEconomics,
+    cfg: ScenarioConfig,
+    usd_to_gbp: float,
+) -> AnnualScenarioEconomics:
+    """
+    Apply price/difficulty/electricity shocks and revenue share to a single year.
+    """
+
+    # Difficulty shock: treat difficulty_pct as relative change, where
+    # +20% difficulty -> 20% less BTC, -10% difficulty -> 10% more BTC.
+    btc_factor = 1.0 - cfg.difficulty_pct
+    btc_mined = max(base.btc_mined * btc_factor, 0.0)
+
+    # Price shock: adjust BTC price, then revenue based on BTC mined.
+    price_factor = 1.0 + cfg.price_pct
+    btc_price_usd = base.btc_price_usd * price_factor
+
+    # Revenue in GBP from BTC * price * FX
+    revenue_gbp = btc_mined * btc_price_usd * usd_to_gbp
+
+    # Electricity cost shock
+    electricity_factor = 1.0 + cfg.electricity_pct
+    electricity_cost_gbp = base.electricity_cost_gbp * electricity_factor
+
+    # For now, keep other opex unchanged
+    other_opex_gbp = base.other_opex_gbp
+
+    total_opex_gbp = electricity_cost_gbp + other_opex_gbp
+    ebitda_gbp = revenue_gbp - total_opex_gbp
+    ebitda_margin = ebitda_gbp / revenue_gbp if revenue_gbp > 0 else 0.0
+
+    # Revenue split
+    client_share = cfg.client_revenue_share
+    client_revenue_gbp = revenue_gbp * client_share
+    operator_revenue_gbp = revenue_gbp - client_revenue_gbp
+
+    # Simple defaults: no tax yet, and client net income is
+    # revenue_share - client-borne opex.
+    client_opex_gbp = total_opex_gbp
+    client_tax_gbp = 0.0
+    client_net_income_gbp = client_revenue_gbp - client_opex_gbp - client_tax_gbp
+
+    return AnnualScenarioEconomics(
+        year_index=base.year_index,
+        btc_mined=btc_mined,
+        btc_price_usd=btc_price_usd,
+        revenue_gbp=revenue_gbp,
+        electricity_cost_gbp=electricity_cost_gbp,
+        other_opex_gbp=other_opex_gbp,
+        total_opex_gbp=total_opex_gbp,
+        ebitda_gbp=ebitda_gbp,
+        ebitda_margin=ebitda_margin,
+        client_revenue_gbp=client_revenue_gbp,
+        operator_revenue_gbp=operator_revenue_gbp,
+        client_tax_gbp=client_tax_gbp,
+        client_net_income_gbp=client_net_income_gbp,
+    )
+
+
+def run_scenario(
+    name: str,
+    base_years: List[AnnualBaseEconomics],
+    cfg: ScenarioConfig,
+    total_capex_gbp: float,
+    usd_to_gbp: float | None = None,
+) -> ScenarioResult:
+    """
+    Run a scenario over the provided base-year economics.
+
+    Parameters
+    ----------
+    name:
+        Human-friendly label for the scenario (e.g. "Base case").
+    base_years:
+        List of AnnualBaseEconomics rows describing the base case.
+    cfg:
+        ScenarioConfig with price/difficulty/electricity shocks and
+        client revenue share.
+    total_capex_gbp:
+        Total project CapEx (for now stored on the result only; can be
+        used later for ROI / payback / IRR calculations).
+    usd_to_gbp:
+        FX rate; if None, uses settings.DEFAULT_USD_TO_GBP.
+    """
+
+    if usd_to_gbp is None:
+        usd_to_gbp = settings.DEFAULT_USD_TO_GBP
+
+    if not base_years:
+        return ScenarioResult(
+            config=cfg,
+            years=[],
+            total_capex_gbp=total_capex_gbp,
+            total_btc=0.0,
+            total_revenue_gbp=0.0,
+            total_opex_gbp=0.0,
+            total_client_revenue_gbp=0.0,
+            total_operator_revenue_gbp=0.0,
+            total_client_tax_gbp=0.0,
+            total_client_net_income_gbp=0.0,
+            avg_ebitda_margin=0.0,
+        )
+
+    years: List[AnnualScenarioEconomics] = []
+
+    for base in base_years:
+        year = _apply_scenario_to_year(base, cfg, usd_to_gbp)
+        years.append(year)
+
+    # Aggregates
+    total_btc = sum(y.btc_mined for y in years)
+    total_revenue_gbp = sum(y.revenue_gbp for y in years)
+    total_opex_gbp = sum(y.total_opex_gbp for y in years)
+    total_client_revenue_gbp = sum(y.client_revenue_gbp for y in years)
+    total_operator_revenue_gbp = sum(y.operator_revenue_gbp for y in years)
+    total_client_tax_gbp = sum(y.client_tax_gbp for y in years)
+    total_client_net_income_gbp = sum(y.client_net_income_gbp for y in years)
+
+    # Revenue-weighted average EBITDA margin
+    if total_revenue_gbp > 0:
+        weighted_margin = sum(y.ebitda_margin * y.revenue_gbp for y in years)
+        avg_ebitda_margin = weighted_margin / total_revenue_gbp
+    else:
+        avg_ebitda_margin = 0.0
+
+    result_cfg = ScenarioConfig(
+        name=name,
+        price_pct=cfg.price_pct,
+        difficulty_pct=cfg.difficulty_pct,
+        electricity_pct=cfg.electricity_pct,
+        client_revenue_share=cfg.client_revenue_share,
+    )
+
+    return ScenarioResult(
+        config=result_cfg,
+        years=years,
+        total_capex_gbp=total_capex_gbp,
+        total_btc=total_btc,
+        total_revenue_gbp=total_revenue_gbp,
+        total_opex_gbp=total_opex_gbp,
+        total_client_revenue_gbp=total_client_revenue_gbp,
+        total_operator_revenue_gbp=total_operator_revenue_gbp,
+        total_client_tax_gbp=total_client_tax_gbp,
+        total_client_net_income_gbp=total_client_net_income_gbp,
+        avg_ebitda_margin=avg_ebitda_margin,
+    )

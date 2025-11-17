@@ -1,4 +1,4 @@
-#  src/ui/site_inputs.py
+# src/ui/site_inputs.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -56,7 +56,7 @@ def render_site_inputs() -> SiteInputs:
     )
 
     # ----------------------------------------------------------------------
-    # Site capacity & operating costs  (⬆️ moved to the top)
+    # Site capacity & operating costs
     # ----------------------------------------------------------------------
     st.subheader("Site Capacity & Operating Costs")
 
@@ -102,7 +102,7 @@ def render_site_inputs() -> SiteInputs:
     st.divider()
 
     # ----------------------------------------------------------------------
-    # Project timeline  (⬇️ now below capacity)
+    # Project timeline
     # ----------------------------------------------------------------------
     st.subheader("Project Timeline")
 
@@ -129,6 +129,10 @@ def render_site_inputs() -> SiteInputs:
     st.caption(
         f"**Project window:** {go_live_date:%d %b %Y} → {project_end_date:%d %b %Y}"
     )
+
+    # Make project duration available to other tabs (e.g. Scenarios)
+    st.session_state["project_years_from_go_live"] = int(project_years)
+    st.session_state["project_years"] = int(project_years)
 
     st.divider()
 

@@ -1,4 +1,4 @@
-#  src/ui/scenarios.py
+# src/ui/scenarios.py
 from __future__ import annotations
 
 from typing import List, Optional
@@ -14,7 +14,7 @@ from src.core.scenario_engine import (
     run_scenario,
 )
 from src.core.site_metrics import SiteMetrics
-from src.ui.scenarios_tab import render_scenarios_tab
+from src.ui.scenario_1 import render_scenario_panel
 
 
 def _build_dummy_base_years(project_years: int) -> List[AnnualBaseEconomics]:
@@ -22,8 +22,6 @@ def _build_dummy_base_years(project_years: int) -> List[AnnualBaseEconomics]:
     Legacy helper to create simple, deterministic annual economics
     so that the scenario engine and UI can be exercised even when
     no real SiteMetrics are available.
-
-    Once you're confident with the live wiring you can delete this.
     """
 
     base_price_usd = settings.DEFAULT_BTC_PRICE_USD
@@ -61,27 +59,122 @@ def _build_dummy_base_years(project_years: int) -> List[AnnualBaseEconomics]:
     return years
 
 
+def _scenario_expander_title(label: str, result: ScenarioResult) -> str:
+    """
+    Build a human-friendly expander title summarising the key
+    decision metrics for a scenario.
+
+    Ordering:
+      1. Net income (£)
+      2. Avg EBITDA margin (%)
+      3. Total BTC (project)
+    """
+    net_income = result.total_client_net_income_gbp
+    total_btc = result.total_btc
+    margin_pct = result.avg_ebitda_margin * 100.0
+
+    return (
+        f"Scenario {label} – "
+        f"£{net_income:,.0f} net income · "
+        f"{margin_pct:,.1f}% Avg EBITDA margin · "
+        f"{total_btc:,.3f} BTC"
+    )
+
+
+def _derive_project_years(site: Optional[object]) -> int:
+    """
+    Try to derive project duration (years) from:
+      1. Values stored in Streamlit session_state (set on Overview tab)
+      2. Attributes on the provided `site` object
+      3. Fallback constant in settings
+
+    This avoids hard-coding the duration in the scenarios engine.
+    """
+
+    # ---- 1. Prefer explicit values from session_state
+    # (Overview tab slider) ----
+    session_keys = [
+        "project_years_from_go_live",
+        "project_years",
+        "project_duration_years_from_go_live",
+    ]
+    for key in session_keys:
+        if key in st.session_state:
+            try:
+                years = int(st.session_state[key])
+                if years > 0:
+                    return years
+            except (TypeError, ValueError):
+                continue
+
+    # ---- 2. Inspect attributes on the `site` object, if provided ----
+    # Explicit candidates first (most likely based on your UI)
+    candidate_attrs = [
+        "project_duration_years_from_go_live",
+        "project_years_from_go_live",
+        "project_duration_years",
+        "project_years",
+        "project_duration",  # if already stored as years
+    ]
+
+    if site is not None:
+        for attr in candidate_attrs:
+            value = getattr(site, attr, None)
+            if value is not None:
+                try:
+                    years = int(value)
+                    if years > 0:
+                        return years
+                except (TypeError, ValueError):
+                    continue
+
+        # Generic fallback: scan attributes that look like "duration in years"
+        for name in dir(site):
+            if name.startswith("_"):
+                continue
+            lower = name.lower()
+            if "duration" in lower and "year" in lower:
+                value = getattr(site, name, None)
+                try:
+                    years = int(value)
+                    if years > 0:
+                        return years
+                except (TypeError, ValueError):
+                    continue
+
+    # ---- 3. Last resort: use settings constant so the app still works ----
+    return int(settings.SCENARIO_FALLBACK_PROJECT_YEARS)
+
+
 def render_scenarios_page(
     site: Optional[object] = None,
 ) -> None:
     """
-    Top-level renderer for the '3. Scenarios & risk' tab.
+    Top-level renderer for the '3. Scenarios & risks' tab.
 
     If a SiteMetrics object is provided (from layout.py), we use it to
     build real base-case annual economics. If not, we fall back to a
     simple dummy series so the tab still renders.
     """
 
-    st.header("3. Scenarios & risk")
+    # Main tab heading
+    st.header("3. Scenarios & risks")
 
-    controls_col1, controls_col2, controls_col3 = st.columns(3)
+    # ------------------------------------------------------------------
+    # Controls row
+    # ------------------------------------------------------------------
+    controls_col1, controls_col2 = st.columns(2)
+
+    # Prefer the project duration captured on the Overview tab
+    # (via session_state / `site`)
+    project_years = _derive_project_years(site)
 
     with controls_col1:
-        project_years = st.number_input(
-            "Project duration (years)",
-            min_value=1,
-            max_value=30,
-            value=settings.SCENARIO_FALLBACK_PROJECT_YEARS,
+        client_share_pct = st.slider(
+            "Your share of BTC revenue (%)",
+            min_value=50,
+            max_value=100,
+            value=int(settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100),
             step=1,
         )
 
@@ -94,14 +187,6 @@ def render_scenarios_page(
             format="%.0f",
         )
 
-    with controls_col3:
-        client_share_pct = st.slider(
-            "Client share of BTC revenue (%)",
-            min_value=50,
-            max_value=100,
-            value=int(settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100),
-            step=1,
-        )
     client_share_fraction = client_share_pct / 100.0
 
     # ------------------------------------------------------------------
@@ -110,11 +195,11 @@ def render_scenarios_page(
     if isinstance(site, SiteMetrics) and site.asics_supported > 0:
         base_years = build_base_annual_from_site_metrics(
             site=site,
-            project_years=int(project_years),
+            project_years=project_years,
         )
     else:
         # If we don't yet have real site metrics, keep the dummy series.
-        base_years = _build_dummy_base_years(int(project_years))
+        base_years = _build_dummy_base_years(project_years)
 
     # If for some reason we still have no data, short-circuit gracefully.
     if not base_years:
@@ -124,7 +209,12 @@ def render_scenarios_page(
         )
         return
 
-    scenarios_cfg = build_default_scenarios(client_share_override=client_share_fraction)
+    # ------------------------------------------------------------------
+    # Run scenarios (base / best / worst)
+    # ------------------------------------------------------------------
+    scenarios_cfg = build_default_scenarios(
+        client_share_override=client_share_fraction,
+    )
 
     base_result: ScenarioResult = run_scenario(
         name="Base case",
@@ -145,11 +235,31 @@ def render_scenarios_page(
         total_capex_gbp=total_capex_gbp,
     )
 
-    render_scenarios_tab(
-        base_result=base_result,
-        best_result=best_result,
-        worst_result=worst_result,
-    )
+    # ------------------------------------------------------------------
+    # Project economics view (headings + expanders)
+    # ------------------------------------------------------------------
+    st.markdown("### Project economics")
+
+    # Base case
+    with st.expander(
+        _scenario_expander_title("base case", base_result),
+        expanded=True,
+    ):
+        render_scenario_panel(base_result)
+
+    # Best case
+    with st.expander(
+        _scenario_expander_title("best case", best_result),
+        expanded=False,
+    ):
+        render_scenario_panel(best_result)
+
+    # Worst case
+    with st.expander(
+        _scenario_expander_title("worst case", worst_result),
+        expanded=False,
+    ):
+        render_scenario_panel(worst_result)
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +275,8 @@ def render_scenarios_and_risk(
     Backwards-compatible wrapper so that existing code that imports
     `render_scenarios_and_risk` continues to work.
 
-    layout.py currently calls this with `site=...` which is a SiteInputs
-    object, not a SiteMetrics. We accept any object here and let
-    render_scenarios_page decide whether it can use it directly; if not,
-    we fall back to dummy economics for now.
+    layout.py may call this with extra keyword arguments (e.g. miner,
+    network_data); we ignore those here and let render_scenarios_page
+    decide what it can use.
     """
     render_scenarios_page(site=site)
