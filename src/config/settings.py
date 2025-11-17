@@ -27,7 +27,7 @@ DEFAULT_BLOCK_SUBSIDY_BTC = BLOCK_SUBSIDY_BTC
 
 # Canonical engine works in USD; we convert to GBP at the site layer.
 # This is a static assumption for now and can later be replaced by a live FX feed.
-DEFAULT_USD_TO_GBP = 0.8
+DEFAULT_USD_TO_GBP = 0.75
 
 # --- Scenario modelling defaults ---
 

@@ -53,6 +53,7 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
     static_price = settings.DEFAULT_BTC_PRICE_USD
     static_diff = settings.DEFAULT_NETWORK_DIFFICULTY
     static_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
+    static_usd_to_gbp = settings.DEFAULT_USD_TO_GBP
 
     # Explicitly static
     if not use_live:
@@ -60,6 +61,7 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             btc_price_usd=float(static_price),
             difficulty=float(static_diff),
             block_subsidy_btc=float(static_subsidy),
+            usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
         )
         return static_data, False
@@ -77,7 +79,8 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             "**Fallback values now in use:**\n"
             f"- BTC price (USD): `${static_price:,.0f}`\n"
             f"- Difficulty: `{static_diff:,}`\n"
-            f"- Block subsidy: `{static_subsidy} BTC`\n\n"
+            f"- Block subsidy: `{static_subsidy} BTC`\n"
+            f"- USD/GBP FX: `{static_usd_to_gbp:.3f}`\n\n"
             "<details>\n"
             "<summary><strong>Technical details</strong></summary>\n\n"
             "```text\n"
@@ -90,6 +93,7 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             btc_price_usd=float(static_price),
             difficulty=float(static_diff),
             block_subsidy_btc=float(static_subsidy),
+            usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
         )
         return static_data, False
@@ -101,6 +105,7 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             btc_price_usd=float(static_price),
             difficulty=float(static_diff),
             block_subsidy_btc=float(static_subsidy),
+            usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
         )
         return static_data, False
@@ -187,6 +192,8 @@ def render_dashboard() -> None:
     else:
         st.sidebar.info("Using static BTC price and difficulty (live disabled).")
 
+    # This always shows the 'current date and time'
+    # That is not necessarily when the data was last updated.
     last_updated_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     with st.sidebar.expander("BTC network data in use", expanded=True):
@@ -195,6 +202,11 @@ def render_dashboard() -> None:
         st.metric("Block subsidy", f"{network_data.block_subsidy_btc} BTC")
         st.metric("Block height", network_data.block_height or "N/A")
         st.caption("These values drive all BTC/day and revenue calculations.")
+        st.caption(f"Last updated: {last_updated_utc}")
+
+    with st.sidebar.expander("Foreign exchange value", expanded=True):
+        st.metric("USD/GBP exchange rate", f"${network_data.usd_to_gbp:.3f}")
+        st.caption("This value drives all the USD to GBP currency conversions.")
         st.caption(f"Last updated: {last_updated_utc}")
 
     # ---------------------------------------------------------
@@ -351,6 +363,7 @@ def render_dashboard() -> None:
             site=site_metrics,
             miner=selected_miner,
             network_data=network_data,
+            usd_to_gbp=network_data.usd_to_gbp,
         )
 
     # ---------------------------------------------------------

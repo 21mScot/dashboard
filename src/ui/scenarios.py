@@ -17,15 +17,20 @@ from src.core.site_metrics import SiteMetrics
 from src.ui.scenario_1 import render_scenario_panel
 
 
-def _build_dummy_base_years(project_years: int) -> List[AnnualBaseEconomics]:
+def _build_dummy_base_years(
+    project_years: int,
+    usd_to_gbp: float,
+) -> List[AnnualBaseEconomics]:
     """
     Legacy helper to create simple, deterministic annual economics
     so that the scenario engine and UI can be exercised even when
     no real SiteMetrics are available.
+
+    Uses the provided usd_to_gbp FX rate so that the dummy series is
+    consistent with the FX shown elsewhere in the UI.
     """
 
     base_price_usd = settings.DEFAULT_BTC_PRICE_USD
-    usd_to_gbp = settings.DEFAULT_USD_TO_GBP
 
     years: List[AnnualBaseEconomics] = []
 
@@ -148,6 +153,7 @@ def _derive_project_years(site: Optional[object]) -> int:
 
 def render_scenarios_page(
     site: Optional[object] = None,
+    usd_to_gbp: float | None = None,
 ) -> None:
     """
     Top-level renderer for the '3. Scenarios & risks' tab.
@@ -155,7 +161,16 @@ def render_scenarios_page(
     If a SiteMetrics object is provided (from layout.py), we use it to
     build real base-case annual economics. If not, we fall back to a
     simple dummy series so the tab still renders.
+
+    usd_to_gbp:
+        FX rate used for project-level economics. If None, falls back
+        to settings.DEFAULT_USD_TO_GBP so that older callers continue
+        to work.
     """
+
+    # Ensure we always have an FX rate
+    if usd_to_gbp is None:
+        usd_to_gbp = settings.DEFAULT_USD_TO_GBP
 
     # Main tab heading
     st.header("3. Scenarios & risks")
@@ -199,7 +214,10 @@ def render_scenarios_page(
         )
     else:
         # If we don't yet have real site metrics, keep the dummy series.
-        base_years = _build_dummy_base_years(project_years)
+        base_years = _build_dummy_base_years(
+            project_years=project_years,
+            usd_to_gbp=usd_to_gbp,
+        )
 
     # If for some reason we still have no data, short-circuit gracefully.
     if not base_years:
@@ -221,18 +239,21 @@ def render_scenarios_page(
         base_years=base_years,
         cfg=scenarios_cfg["base"],
         total_capex_gbp=total_capex_gbp,
+        usd_to_gbp=usd_to_gbp,
     )
     best_result: ScenarioResult = run_scenario(
         name="Best case",
         base_years=base_years,
         cfg=scenarios_cfg["best"],
         total_capex_gbp=total_capex_gbp,
+        usd_to_gbp=usd_to_gbp,
     )
     worst_result: ScenarioResult = run_scenario(
         name="Worst case",
         base_years=base_years,
         cfg=scenarios_cfg["worst"],
         total_capex_gbp=total_capex_gbp,
+        usd_to_gbp=usd_to_gbp,
     )
 
     # ------------------------------------------------------------------
@@ -269,6 +290,7 @@ def render_scenarios_page(
 
 def render_scenarios_and_risk(
     site: Optional[object] = None,
+    usd_to_gbp: float | None = None,
     **kwargs,
 ) -> None:
     """
@@ -276,7 +298,7 @@ def render_scenarios_and_risk(
     `render_scenarios_and_risk` continues to work.
 
     layout.py may call this with extra keyword arguments (e.g. miner,
-    network_data); we ignore those here and let render_scenarios_page
-    decide what it can use.
+    network_data); we accept an optional usd_to_gbp so that the caller
+    can pass the same FX snapshot used elsewhere in the UI.
     """
-    render_scenarios_page(site=site)
+    render_scenarios_page(site=site, usd_to_gbp=usd_to_gbp)
