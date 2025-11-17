@@ -18,89 +18,75 @@ LIVE_DATA_USER_AGENT = "21mScotDashboard/0.1 (contact: you@example.com)"
 # Hard-coded post-2024 halving subsidy
 BLOCK_SUBSIDY_BTC = 3.125
 
-# Feel free to tweak these to whatever you want to assume in the POC
 DEFAULT_BTC_PRICE_USD = 90000.0
-DEFAULT_NETWORK_DIFFICULTY = 150_000_000_000_000  # placeholder example
+DEFAULT_NETWORK_DIFFICULTY = 150_000_000_000_000
 DEFAULT_BLOCK_SUBSIDY_BTC = BLOCK_SUBSIDY_BTC
 
-# --- Local currency / FX assumptions (used at site-economics layer) ---
+# --- Local currency / FX assumptions ---
 
-# Canonical engine works in USD; we convert to GBP at the site layer.
-# This is a static assumption for now and can later be replaced by a live FX feed.
 DEFAULT_USD_TO_GBP = 0.75
 
 # --- Scenario modelling defaults ---
 
-# Revenue share:
-# Fraction of *gross BTC revenue* going to the AD plant operator (client).
-# The remaining share (1 - SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE)
-# goes to 21mScot as the operating / optimisation partner.
+# Revenue share: fraction of gross BTC revenue going to the AD operator (client).
 SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE = 0.90
 
-# Best / base / worst case shocks.
-# These are *relative changes* (e.g. +0.20 = +20%) that will be applied
-# on top of the "base" assumptions for BTC price, network difficulty,
-# and electricity cost when building scenarios.
-#
-# You can adjust these numbers here without touching any UI or engine code.
-
-# BTC price shocks
-SCENARIO_BASE_PRICE_PCT = 0.00  # 0% change (anchor)
-SCENARIO_BEST_PRICE_PCT = 0.20  # +20% bullish case
-SCENARIO_WORST_PRICE_PCT = -0.20  # -20% bearish case
+# Price shocks (% change)
+SCENARIO_BASE_PRICE_PCT = 0.00
+SCENARIO_BEST_PRICE_PCT = 0.20
+SCENARIO_WORST_PRICE_PCT = -0.20
 
 # Network difficulty shocks
-SCENARIO_BASE_DIFFICULTY_PCT = 0.00  # 0% change
-SCENARIO_BEST_DIFFICULTY_PCT = -0.10  # -10% easier network
-SCENARIO_WORST_DIFFICULTY_PCT = 0.20  # +20% more competition
+SCENARIO_BASE_DIFFICULTY_PCT = 0.00
+SCENARIO_BEST_DIFFICULTY_PCT = -0.10
+SCENARIO_WORST_DIFFICULTY_PCT = 0.20
 
 # Electricity cost shocks
-SCENARIO_BASE_ELECTRICITY_PCT = 0.00  # 0% change
-SCENARIO_BEST_ELECTRICITY_PCT = -0.10  # -10% cheaper power
-SCENARIO_WORST_ELECTRICITY_PCT = 0.20  # +20% more expensive power
+SCENARIO_BASE_ELECTRICITY_PCT = 0.00
+SCENARIO_BEST_ELECTRICITY_PCT = -0.10
+SCENARIO_WORST_ELECTRICITY_PCT = 0.20
 
-# Optional: default project length to fall back on if the UI
-# does not provide a project duration for some reason.
-# The main source of truth is the Overview tab's "Project duration".
+# Fallback project duration (years)
 SCENARIO_FALLBACK_PROJECT_YEARS = 4
 
-# --- CapEx & tax assumptions (client side – AD plant operator) ---
+# --- CapEx assumptions (client – AD operator) ---
+# Phase 1: constant values; later made configurable.
 
-# Approximate UK corporation tax rate for the AD plant operator.
-CLIENT_CORPORATION_TAX_RATE = 0.25  # 25%
+# ASIC miner cost components
+ASIC_PRICE_USD = 3000.0  # Base miner unit price
+ASIC_SHIPPING_USD = 150.0  # Per miner shipping
+ASIC_IMPORT_DUTY_RATE = 0.05  # %, applied to miner price
+ASIC_SPARES_RATE = 0.03  # %, spare parts allocation
 
-# Capital allowance: fraction of qualifying CapEx that can be
-# offset against profits in year 1. Simple POC: full expensing.
-CLIENT_CAPEX_FIRST_YEAR_ALLOWANCE_PCT = 1.0  # 100% of CapEx
+# Infrastructure / ancillary CapEx (site-level)
+RACKING_COST_PER_MINER_USD = 80.0
+CABLES_COST_PER_MINER_USD = 25.0
+SWITCHGEAR_TOTAL_USD = 3000.0
+NETWORKING_TOTAL_USD = 1500.0
 
-# Accounting lifetime of mining equipment for economic wear & tear.
+# Installation / commissioning
+INSTALL_LABOUR_HOURS = 50
+INSTALL_LABOUR_RATE_USD = 60.0
+CERTIFICATION_COST_USD = 500.0
+
+# --- Opex assumptions (annual) ---
+
+MAINTENANCE_COST_PER_MINER_PA_USD = 50.0
+FIRMWARE_LICENSE_PER_MINER_PA_USD = 20.0
+ANNUAL_FAILURE_RATE = 0.02  # placeholder for future modelling
+
+# --- Tax assumptions ---
+
+CLIENT_CORPORATION_TAX_RATE = 0.25  # UK corp tax
+CLIENT_CAPEX_FIRST_YEAR_ALLOWANCE_PCT = 1.0  # 100% full expensing
 MINER_ACCOUNTING_LIFETIME_YEARS = 4
 
-# ---------------------------------------------------------
-# Chart styling (histogram / BTC bars)
-# ---------------------------------------------------------
+# --- Chart styling ---
 
-# Opacity for BTC mined histogram bars (0.0 – 1.0)
-SCENARIO_BTC_BAR_OPACITY = 0.25
-
-# Colour for BTC mined bars (Hex or named)
+SCENARIO_BTC_BAR_OPACITY = 1.0
 SCENARIO_BTC_BAR_COLOR = "#E9ECF1"
-
-# Should BTC bar borders be shown?
 SCENARIO_BTC_BAR_STROKE_WIDTH = 0
-
-# Histogram / BTC mined bar style
-SCENARIO_BTC_BAR_OPACITY = 1.0  # Looks like the bars are fully opaque
-
-# Revenue line colour (if you want centralised control)
-SCENARIO_REVENUE_LINE_COLOR = "#1f77b4"  # streamlit default blue
-
-# EBITDA line colour
-SCENARIO_EBITDA_LINE_COLOR = "#2ca02c"  # greenish
-
-# EBITDA line style (solid/dashed)
-SCENARIO_EBITDA_LINE_DASH = [4, 2]  # dashed
-
-# How tall the highest BTC bar should be as a fraction of its axis height
-# e.g. 0.6 = tallest bar reaches 60% of the BTC axis
+SCENARIO_REVENUE_LINE_COLOR = "#1f77b4"
+SCENARIO_EBITDA_LINE_COLOR = "#2ca02c"
+SCENARIO_EBITDA_LINE_DASH = [4, 2]
 SCENARIO_BTC_BAR_MAX_FRACTION = 0.6

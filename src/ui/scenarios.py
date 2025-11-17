@@ -1,4 +1,5 @@
 # src/ui/scenarios.py
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -6,6 +7,7 @@ from typing import List, Optional
 import streamlit as st
 
 from src.config import settings
+from src.core.capex import CapexBreakdown, compute_capex_breakdown
 from src.core.scenario_config import build_default_scenarios
 from src.core.scenario_engine import (
     AnnualBaseEconomics,
@@ -184,22 +186,47 @@ def render_scenarios_page(
     # (via session_state / `site`)
     project_years = _derive_project_years(site)
 
+    # Optional: modelled CapEx breakdown from assumptions
+    capex_breakdown: CapexBreakdown | None = None
+    modelled_capex_total_gbp: float | None = None
+
+    if isinstance(site, SiteMetrics) and site.asics_supported > 0:
+        capex_breakdown = compute_capex_breakdown(
+            asic_count=site.asics_supported,
+            usd_to_gbp=usd_to_gbp,
+        )
+        modelled_capex_total_gbp = capex_breakdown.total_gbp
+
     with controls_col1:
         client_share_pct = st.slider(
-            "Your share of BTC revenue (%)",
+            "Client share of BTC revenue (%)",
             min_value=50,
             max_value=100,
             value=int(settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100),
             step=1,
+            help=(
+                "Percentage of gross BTC mining revenue that goes to the AD operator "
+                "(your client). Your share is the remainder."
+            ),
         )
 
     with controls_col2:
+        default_capex_value = (
+            float(modelled_capex_total_gbp)
+            if modelled_capex_total_gbp is not None
+            else 1_000_000.0
+        )
         total_capex_gbp = st.number_input(
             "Total project CapEx (£)",
             min_value=0.0,
-            value=1_000_000.0,
+            value=default_capex_value,
             step=50_000.0,
             format="%.0f",
+            help=(
+                "Total client investment for this mining project. "
+                "Defaults to the model-based estimate from your ASIC and "
+                "infrastructure assumptions, but can be overridden."
+            ),
         )
 
     client_share_fraction = client_share_pct / 100.0
@@ -266,21 +293,21 @@ def render_scenarios_page(
         _scenario_expander_title("base case", base_result),
         expanded=True,
     ):
-        render_scenario_panel(base_result)
+        render_scenario_panel(base_result, capex_breakdown=capex_breakdown)
 
     # Best case
     with st.expander(
         _scenario_expander_title("best case", best_result),
         expanded=False,
     ):
-        render_scenario_panel(best_result)
+        render_scenario_panel(best_result, capex_breakdown=capex_breakdown)
 
     # Worst case
     with st.expander(
         _scenario_expander_title("worst case", worst_result),
         expanded=False,
     ):
-        render_scenario_panel(worst_result)
+        render_scenario_panel(worst_result, capex_breakdown=capex_breakdown)
 
 
 # ---------------------------------------------------------------------------
