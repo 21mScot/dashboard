@@ -26,7 +26,10 @@ class SiteMetrics:
     site_revenue_gbp_per_day: float
     site_power_cost_gbp_per_day: float
     site_net_revenue_gbp_per_day: float
+
+    # Efficiency (per day)
     net_revenue_per_kw_gbp_per_day: float
+    net_revenue_per_mwh_gbp_per_day: float
 
 
 def compute_site_metrics(
@@ -66,6 +69,7 @@ def compute_site_metrics(
             site_power_cost_gbp_per_day=0.0,
             site_net_revenue_gbp_per_day=0.0,
             net_revenue_per_kw_gbp_per_day=0.0,
+            net_revenue_per_mwh_gbp_per_day=0.0,
         )
 
     uptime_factor = max(0.0, min(uptime_pct, 100.0)) / 100.0
@@ -99,12 +103,22 @@ def compute_site_metrics(
         site_revenue_gbp_per_day - site_power_cost_gbp_per_day
     )
 
+    # Efficiency per kW of capacity actually used
     if site_power_used_kw > 0:
         net_revenue_per_kw_gbp_per_day = (
             site_net_revenue_gbp_per_day / site_power_used_kw
         )
     else:
         net_revenue_per_kw_gbp_per_day = 0.0
+
+    # Efficiency per MWh of energy actually used
+    site_mwh_per_day = site_kwh_per_day / 1000.0
+    if site_mwh_per_day > 0:
+        net_revenue_per_mwh_gbp_per_day = (
+            site_net_revenue_gbp_per_day / site_mwh_per_day
+        )
+    else:
+        net_revenue_per_mwh_gbp_per_day = 0.0
 
     return SiteMetrics(
         asics_supported=asics_supported,
@@ -118,4 +132,5 @@ def compute_site_metrics(
         site_power_cost_gbp_per_day=site_power_cost_gbp_per_day,
         site_net_revenue_gbp_per_day=site_net_revenue_gbp_per_day,
         net_revenue_per_kw_gbp_per_day=net_revenue_per_kw_gbp_per_day,
+        net_revenue_per_mwh_gbp_per_day=net_revenue_per_mwh_gbp_per_day,
     )
