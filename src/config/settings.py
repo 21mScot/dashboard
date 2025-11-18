@@ -49,6 +49,9 @@ SCENARIO_WORST_ELECTRICITY_PCT = 0.20
 # Fallback project duration (years)
 SCENARIO_FALLBACK_PROJECT_YEARS = 4
 
+# UI defaults
+PROJECT_GO_LIVE_INCREMENT_WEEKS = 4
+
 # --- CapEx assumptions (client – AD operator) ---
 # Phase 1: constant values; later made configurable.
 

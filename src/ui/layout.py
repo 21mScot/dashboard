@@ -349,11 +349,11 @@ def render_dashboard() -> None:
 
         with e1:
             st.metric(
-                "Net income per MWh / day",
-                f"£{site_metrics.net_revenue_per_mwh_gbp_per_day:,.2f}",
+                "Net income per kWh",
+                f"£{site_metrics.net_revenue_per_kwh_gbp:,.3f}",
                 help=(
-                    "Net income per MWh / day: Net income divided by the MWh of energy"
-                    " actually used per day. Shows the economic value (£/MWh) of "
+                    "Net income per kWh: Net income divided by the kWh of energy"
+                    " actually used per day. Shows the economic value (£/kWh) of "
                     "routing your energy into Bitcoin mining instead of alternative "
                     "uses."
                 ),
