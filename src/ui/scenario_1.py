@@ -54,6 +54,27 @@ def _build_years_dataframe(years: List[AnnualScenarioEconomics]) -> pd.DataFrame
     )
 
 
+def _build_cumulative_net_income_dataframe(result: ScenarioResult) -> pd.DataFrame:
+    """
+    Build a cumulative net income series vs CapEx for the scenario.
+    """
+
+    cumulative = 0.0
+    records: list[dict[str, float | int]] = []
+
+    for y in result.years:
+        cumulative += y.client_net_income_gbp
+        records.append(
+            {
+                "Year": y.year_index,
+                "Cumulative net income (GBP)": cumulative,
+                "CapEx (GBP)": result.total_capex_gbp,
+            }
+        )
+
+    return pd.DataFrame(records)
+
+
 def _render_headline_metrics(result: ScenarioResult) -> None:
     """
     Top 4–5 numbers you’d talk to a client about for this scenario.
@@ -211,6 +232,59 @@ def _render_yearly_chart(df: pd.DataFrame) -> None:
     st.altair_chart(chart, width="stretch")
 
 
+def _render_cumulative_payback_chart(result: ScenarioResult) -> None:
+    """
+    Chart showing cumulative client net income vs CapEx to illustrate payback.
+    """
+
+    df = _build_cumulative_net_income_dataframe(result)
+
+    if df.empty or result.total_capex_gbp <= 0:
+        return
+
+    line_net = (
+        alt.Chart(df)
+        .mark_line()
+        .encode(
+            x=alt.X(
+                "Year:O",
+                axis=alt.Axis(title="Year", labelAngle=0),
+            ),
+            y=alt.Y(
+                "Cumulative net income (GBP):Q",
+                axis=alt.Axis(title="Cumulative net income / CapEx (GBP)"),
+            ),
+            tooltip=[
+                alt.Tooltip("Year:O", title="Year"),
+                alt.Tooltip(
+                    "Cumulative net income (GBP):Q",
+                    title="Cumulative net income",
+                    format=",.0f",
+                ),
+                alt.Tooltip(
+                    "CapEx (GBP):Q",
+                    title="CapEx",
+                    format=",.0f",
+                ),
+            ],
+        )
+    )
+
+    line_capex = (
+        alt.Chart(df)
+        .mark_line(strokeDash=[4, 2])
+        .encode(
+            x="Year:O",
+            y="CapEx (GBP):Q",
+        )
+    )
+
+    chart = alt.layer(line_net, line_capex)
+
+    st.markdown("#### Cumulative client net income vs CapEx")
+    st.altair_chart(chart, width="stretch")
+
+
 def _render_yearly_table(df: pd.DataFrame) -> None:
     """
     Tabular annual breakdown for people who want to see the numbers.
@@ -304,17 +378,22 @@ def render_scenario_panel(
 
     st.markdown("---")
 
+    # Cumulative net income vs CapEx chart (payback visual)
+    _render_cumulative_payback_chart(result)
+
+    st.markdown("---")
+
     # Yearly chart + annual breakdown (expander)
     df = _build_years_dataframe(result.years)
 
     _render_yearly_chart(df)
 
-    # 1) Annual breakdown expander CLOSED by default
-    with st.expander("Annual breakdown", expanded=False):
+    # Renamed: "Annual economic breakdown"
+    with st.expander("Annual economic breakdown", expanded=False):
         _render_yearly_table(df)
 
-    #    st.markdown("---")
+    # NOTE: removed extra horizontal rule between the two expanders
 
-    # CapEx breakdown (client investment) as an optional drill-down
-    with st.expander("CapEx breakdown (client investment)", expanded=False):
+    # Renamed: "CapEx breakdown"
+    with st.expander("CapEx breakdown", expanded=False):
         _render_capex_breakdown(result, capex_breakdown)
