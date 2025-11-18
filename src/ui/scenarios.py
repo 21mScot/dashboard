@@ -1,13 +1,13 @@
 # src/ui/scenarios.py
-
 from __future__ import annotations
 
+import math
 from typing import List, Optional
 
+import pandas as pd
 import streamlit as st
 
 from src.config import settings
-from src.core.capex import CapexBreakdown, compute_capex_breakdown
 from src.core.scenario_config import build_default_scenarios
 from src.core.scenario_engine import (
     AnnualBaseEconomics,
@@ -42,6 +42,7 @@ def _build_dummy_base_years(
 
         revenue_gbp = btc_mined * base_price_usd * usd_to_gbp
 
+        # Dummy split of opex for the placeholder series
         electricity_cost_gbp = revenue_gbp * 0.15
         other_opex_gbp = revenue_gbp * 0.05
 
@@ -94,12 +95,9 @@ def _derive_project_years(site: Optional[object]) -> int:
       1. Values stored in Streamlit session_state (set on Overview tab)
       2. Attributes on the provided `site` object
       3. Fallback constant in settings
-
-    This avoids hard-coding the duration in the scenarios engine.
     """
 
     # ---- 1. Prefer explicit values from session_state
-    # (Overview tab slider) ----
     session_keys = [
         "project_years_from_go_live",
         "project_years",
@@ -115,13 +113,12 @@ def _derive_project_years(site: Optional[object]) -> int:
                 continue
 
     # ---- 2. Inspect attributes on the `site` object, if provided ----
-    # Explicit candidates first (most likely based on your UI)
     candidate_attrs = [
         "project_duration_years_from_go_live",
         "project_years_from_go_live",
         "project_duration_years",
         "project_years",
-        "project_duration",  # if already stored as years
+        "project_duration",
     ]
 
     if site is not None:
@@ -135,7 +132,6 @@ def _derive_project_years(site: Optional[object]) -> int:
                 except (TypeError, ValueError):
                     continue
 
-        # Generic fallback: scan attributes that look like "duration in years"
         for name in dir(site):
             if name.startswith("_"):
                 continue
@@ -149,8 +145,58 @@ def _derive_project_years(site: Optional[object]) -> int:
                 except (TypeError, ValueError):
                     continue
 
-    # ---- 3. Last resort: use settings constant so the app still works ----
+    # ---- 3. Last resort ----
     return int(settings.SCENARIO_FALLBACK_PROJECT_YEARS)
+
+
+def _format_currency(value: float) -> str:
+    return f"£{value:,.0f}"
+
+
+def _format_btc(value: float) -> str:
+    return f"{value:,.3f} BTC"
+
+
+def _format_payback(years: float) -> str:
+    if years is None or math.isnan(years) or math.isinf(years):
+        return "No payback in project"
+    if years < 0:
+        return "N/A"
+    return f"{years:,.1f} years"
+
+
+def _render_scenario_comparison(
+    base_result: ScenarioResult,
+    best_result: ScenarioResult,
+    worst_result: ScenarioResult,
+) -> None:
+    """
+    Render a compact comparison of best / base / worst scenarios
+    using the key decision metrics a client will care about.
+    """
+
+    rows = []
+
+    for label, result in [
+        ("Best case", best_result),
+        ("Base case", base_result),
+        ("Worst case", worst_result),
+    ]:
+        rows.append(
+            {
+                "Scenario": label,
+                "Client net income": _format_currency(
+                    result.total_client_net_income_gbp
+                ),
+                "Payback period": _format_payback(result.client_payback_years),
+                "Total BTC (project)": _format_btc(result.total_btc),
+            }
+        )
+
+    df = pd.DataFrame(rows)
+
+    st.markdown("### Scenario comparison (headline metrics)")
+    st.dataframe(df, width="content", hide_index=True)
 
 
 def render_scenarios_page(
@@ -159,15 +205,6 @@ def render_scenarios_page(
 ) -> None:
     """
     Top-level renderer for the '3. Scenarios & risks' tab.
-
-    If a SiteMetrics object is provided (from layout.py), we use it to
-    build real base-case annual economics. If not, we fall back to a
-    simple dummy series so the tab still renders.
-
-    usd_to_gbp:
-        FX rate used for project-level economics. If None, falls back
-        to settings.DEFAULT_USD_TO_GBP so that older callers continue
-        to work.
     """
 
     # Ensure we always have an FX rate
@@ -178,58 +215,30 @@ def render_scenarios_page(
     st.header("3. Scenarios & risks")
 
     # ------------------------------------------------------------------
-    # Controls row
+    # Client revenue share control (full-width slider)
     # ------------------------------------------------------------------
-    controls_col1, controls_col2 = st.columns(2)
-
-    # Prefer the project duration captured on the Overview tab
-    # (via session_state / `site`)
     project_years = _derive_project_years(site)
 
-    # Optional: modelled CapEx breakdown from assumptions
-    capex_breakdown: CapexBreakdown | None = None
-    modelled_capex_total_gbp: float | None = None
-
-    if isinstance(site, SiteMetrics) and site.asics_supported > 0:
-        capex_breakdown = compute_capex_breakdown(
-            asic_count=site.asics_supported,
-            usd_to_gbp=usd_to_gbp,
-        )
-        modelled_capex_total_gbp = capex_breakdown.total_gbp
-
-    with controls_col1:
-        client_share_pct = st.slider(
-            "Client share of BTC revenue (%)",
-            min_value=50,
-            max_value=100,
-            value=int(settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100),
-            step=1,
-            help=(
-                "Percentage of gross BTC mining revenue that goes to the AD operator "
-                "(your client). Your share is the remainder."
-            ),
-        )
-
-    with controls_col2:
-        default_capex_value = (
-            float(modelled_capex_total_gbp)
-            if modelled_capex_total_gbp is not None
-            else 1_000_000.0
-        )
-        total_capex_gbp = st.number_input(
-            "Total project CapEx (£)",
-            min_value=0.0,
-            value=default_capex_value,
-            step=50_000.0,
-            format="%.0f",
-            help=(
-                "Total client investment for this mining project. "
-                "Defaults to the model-based estimate from your ASIC and "
-                "infrastructure assumptions, but can be overridden."
-            ),
-        )
+    client_share_pct = st.slider(
+        "Your share of BTC revenue (%)",
+        min_value=50,
+        max_value=100,
+        value=int(settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100),
+        step=1,
+    )
 
     client_share_fraction = client_share_pct / 100.0
+    operator_share_pct = 100 - client_share_pct
+
+    st.caption(
+        f"You keep {client_share_pct:.0f}% of gross BTC revenue · "
+        f"21mScot receives {operator_share_pct:.0f}%."
+    )
+
+    # We no longer ask the user for CapEx here; we rely on model-based CapEx
+    # used inside the scenario panel / CapEx breakdown. At the engine level,
+    # we pass 0.0 so payback/ROI show as N/A when CapEx is not explicitly set.
+    total_capex_gbp: float = 0.0
 
     # ------------------------------------------------------------------
     # Build base annual economics
@@ -240,13 +249,11 @@ def render_scenarios_page(
             project_years=project_years,
         )
     else:
-        # If we don't yet have real site metrics, keep the dummy series.
         base_years = _build_dummy_base_years(
             project_years=project_years,
             usd_to_gbp=usd_to_gbp,
         )
 
-    # If for some reason we still have no data, short-circuit gracefully.
     if not base_years:
         st.info(
             "No ASICs are currently supported by the site configuration, "
@@ -284,6 +291,17 @@ def render_scenarios_page(
     )
 
     # ------------------------------------------------------------------
+    # Scenario comparison strip (headline view)
+    # ------------------------------------------------------------------
+    _render_scenario_comparison(
+        base_result=base_result,
+        best_result=best_result,
+        worst_result=worst_result,
+    )
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------------
     # Project economics view (headings + expanders)
     # ------------------------------------------------------------------
     st.markdown("### Project economics")
@@ -293,21 +311,21 @@ def render_scenarios_page(
         _scenario_expander_title("base case", base_result),
         expanded=True,
     ):
-        render_scenario_panel(base_result, capex_breakdown=capex_breakdown)
+        render_scenario_panel(base_result)
 
     # Best case
     with st.expander(
         _scenario_expander_title("best case", best_result),
         expanded=False,
     ):
-        render_scenario_panel(best_result, capex_breakdown=capex_breakdown)
+        render_scenario_panel(best_result)
 
     # Worst case
     with st.expander(
         _scenario_expander_title("worst case", worst_result),
         expanded=False,
     ):
-        render_scenario_panel(worst_result, capex_breakdown=capex_breakdown)
+        render_scenario_panel(worst_result)
 
 
 # ---------------------------------------------------------------------------
@@ -323,9 +341,5 @@ def render_scenarios_and_risk(
     """
     Backwards-compatible wrapper so that existing code that imports
     `render_scenarios_and_risk` continues to work.
-
-    layout.py may call this with extra keyword arguments (e.g. miner,
-    network_data); we accept an optional usd_to_gbp so that the caller
-    can pass the same FX snapshot used elsewhere in the UI.
     """
     render_scenarios_page(site=site, usd_to_gbp=usd_to_gbp)

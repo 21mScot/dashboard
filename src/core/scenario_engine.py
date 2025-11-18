@@ -281,6 +281,9 @@ def run_scenario(
     usd_to_gbp:
         FX rate; if None, uses settings.DEFAULT_USD_TO_GBP.
     """
+    # ---- NEW: make None safe for older callers ----
+    if total_capex_gbp is None:
+        total_capex_gbp = 0.0
 
     if usd_to_gbp is None:
         usd_to_gbp = settings.DEFAULT_USD_TO_GBP
