@@ -32,22 +32,34 @@ class LiveDataError(RuntimeError):
 
 
 def _fetch_btc_price_usd() -> float:
-    """Fetch BTC price in USD from CoinGecko."""
-    resp = requests.get(
-        settings.COINGECKO_SIMPLE_PRICE_URL,
-        params={"ids": "bitcoin", "vs_currencies": "usd"},
-        headers={"User-Agent": settings.LIVE_DATA_USER_AGENT},
-        timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-
+    """Fetch BTC price in USD from CoinGecko, with Coinbase as a quick fallback."""
+    # Primary: CoinGecko
     try:
-        price = float(data["bitcoin"]["usd"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise LiveDataError(f"Unexpected price payload from CoinGecko: {data}") from exc
-
-    return price
+        resp = requests.get(
+            settings.COINGECKO_SIMPLE_PRICE_URL,
+            params={"ids": "bitcoin", "vs_currencies": "usd"},
+            headers={"User-Agent": settings.LIVE_DATA_USER_AGENT},
+            timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return float(data["bitcoin"]["usd"])
+    except Exception:
+        # Secondary: Coinbase spot price (no API key required)
+        cb_resp = requests.get(
+            "https://api.coinbase.com/v2/prices/spot",
+            params={"currency": "USD"},
+            headers={"User-Agent": settings.LIVE_DATA_USER_AGENT},
+            timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
+        )
+        cb_resp.raise_for_status()
+        cb_data = cb_resp.json()
+        try:
+            return float(cb_data["data"]["amount"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise LiveDataError(
+                f"Unexpected price payload from Coinbase: {cb_data}"
+            ) from exc
 
 
 def _fetch_difficulty_and_height() -> tuple[float, Optional[int]]:
@@ -83,28 +95,37 @@ def _fetch_difficulty_and_height() -> tuple[float, Optional[int]]:
 
 def _fetch_usd_to_gbp_rate() -> float:
     """
-    Fetch USD/GBP FX rate from a FOSS source (Frankfurter API).
+    Fetch USD/GBP FX rate with a resilient fallback chain.
 
-    Frankfurter is a free, open-source API backed by ECB rates:
-    https://www.frankfurter.app/
+    Primary: Frankfurter (ECB-backed, FOSS)
+    Secondary: exchangerate.host (public, free)
+    Final fallback: static default so other live data can still be used.
     """
-    resp = requests.get(
-        "https://api.frankfurter.app/latest",
-        params={"from": "USD", "to": "GBP"},
-        headers={"User-Agent": settings.LIVE_DATA_USER_AGENT},
-        timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-
     try:
-        # Example payload:
-        # {"amount":1.0,"base":"USD","date":"2025-01-01","rates":{"GBP":0.79}}
-        rate = float(data["rates"]["GBP"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise LiveDataError(f"Unexpected FX payload from Frankfurter: {data}") from exc
-
-    return rate
+        resp = requests.get(
+            "https://api.frankfurter.app/latest",
+            params={"from": "USD", "to": "GBP"},
+            headers={"User-Agent": settings.LIVE_DATA_USER_AGENT},
+            timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return float(data["rates"]["GBP"])
+    except Exception:
+        # Secondary provider
+        try:
+            resp = requests.get(
+                "https://api.exchangerate.host/latest",
+                params={"base": "USD", "symbols": "GBP"},
+                headers={"User-Agent": settings.LIVE_DATA_USER_AGENT},
+                timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return float(data["rates"]["GBP"])
+        except Exception:
+            # Do not block BTC/difficulty if FX is temporarily down
+            return float(settings.DEFAULT_USD_TO_GBP)
 
 
 # ---------------------------------------------------------
