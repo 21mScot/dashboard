@@ -64,6 +64,7 @@ Use this table to record ongoing work (newest first):
 
 | Date | Area | Branch | Driver | Goal & Notes |
 | --- | --- | --- | --- | --- |
+| 2025-11-19 | ui/pdf export | `codex-download` | Mark/Codex | Added versioned footer with Terms/Privacy links, placeholder legal docs, and a first-pass PDF export feature (download/view/print). Smoke-tested via Streamlit; PDF layout verified manually. |
 | 2025-11-19 | core/scenario_engine & miner models | `codex-refactor-first` | Mark/Codex | Added regression coverage (`tests/test_scenario_engine.py`), synced miner output tests with `NetworkData`, split scenario models/calculations/finance helpers into dedicated modules (including weighted margin + payback helpers), and moved `MinerOption` into `src/core/miner_models.py` so core logic no longer imports UI modules. `pytest` all green post-refactor. |
 
 | _YYYY-MM-DD_ | _e.g., core/scenarios_ | `codex-refactor/<topic>` | _Mark/Codex_ | _What problem we’re solving, key tests run, follow-ups_ |

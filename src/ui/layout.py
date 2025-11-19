@@ -1,18 +1,23 @@
 # src/ui/layout.py
 from __future__ import annotations
 
+import base64
 import textwrap
 from dataclasses import asdict
 from datetime import datetime, timezone
 
 import streamlit as st
+from streamlit import components
 
 from src.config import settings
 from src.config.settings import LIVE_DATA_CACHE_TTL_S
+from src.config.version import APP_VERSION, PRIVACY_URL, TERMS_URL
+from src.core.capex import compute_capex_breakdown
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
 from src.core.site_metrics import SiteMetrics, compute_site_metrics
 from src.ui.assumptions import render_assumptions_and_methodology
 from src.ui.miner_selection import render_miner_selection
+from src.ui.pdf_export import build_pdf_report
 from src.ui.scenarios import render_scenarios_and_risk
 from src.ui.site_inputs import render_site_inputs
 
@@ -248,6 +253,18 @@ def render_dashboard() -> None:
             selected_miner=selected_miner,
             network_data=network_data,
         )
+        if site_metrics.asics_supported > 0:
+            capex_breakdown = compute_capex_breakdown(
+                site_metrics.asics_supported,
+                usd_to_gbp=network_data.usd_to_gbp,
+            )
+        else:
+            capex_breakdown = None
+
+        st.session_state["pdf_site_inputs"] = site_inputs
+        st.session_state["pdf_selected_miner"] = selected_miner
+        st.session_state["pdf_site_metrics"] = site_metrics
+        st.session_state["pdf_capex_breakdown"] = capex_breakdown
 
         st.markdown("---")
         st.markdown("## See your site performance")
@@ -416,3 +433,102 @@ def render_dashboard() -> None:
     # ---------------------------------------------------------
     with tab_assumptions:
         render_assumptions_and_methodology()
+
+    render_pdf_download_section()
+    render_footer()
+
+
+def render_footer() -> None:
+    st.markdown("---")
+    footer_html = (
+        f"<p style='text-align: center;'>"
+        f"Version {APP_VERSION} · "
+        f"<a href='{TERMS_URL}' target='_blank'>Terms & Conditions</a> · "
+        f"<a href='{PRIVACY_URL}' target='_blank'>Privacy Policy</a>"
+        f"</p>"
+    )
+    st.markdown(footer_html, unsafe_allow_html=True)
+
+
+def render_pdf_download_section() -> None:
+    st.markdown("---")
+    st.subheader("Download snapshot (beta)")
+
+    pdf_site_inputs = st.session_state.get("pdf_site_inputs")
+    pdf_miner = st.session_state.get("pdf_selected_miner")
+    pdf_metrics = st.session_state.get("pdf_site_metrics")
+    pdf_capex = st.session_state.get("pdf_capex_breakdown")
+    scenario_state = st.session_state.get("pdf_scenarios")
+
+    if not all([pdf_site_inputs, pdf_miner, pdf_metrics, scenario_state]):
+        st.info(
+            "Provide site parameters and compute scenarios to enable the PDF export."
+        )
+        return
+
+    scenarios = {
+        key: scenario_state.get(key)
+        for key in ("base", "best", "worst")
+        if scenario_state.get(key)
+    }
+    client_share_pct = scenario_state.get("client_share_pct", 0.0)
+
+    pdf_bytes = build_pdf_report(
+        site_inputs=pdf_site_inputs,
+        miner=pdf_miner,
+        metrics=pdf_metrics,
+        scenarios=scenarios,
+        client_share_pct=client_share_pct,
+        capex_breakdown=pdf_capex,
+    )
+
+    col_download, col_print = st.columns([1, 1])
+    with col_download:
+        st.download_button(
+            label="Download",
+            data=pdf_bytes,
+            file_name="bitcoin_mining_snapshot.pdf",
+            mime="application/pdf",
+        )
+    with col_print:
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        open_pdf_js = f"""
+            <script>
+                const pdfData = "{pdf_base64}";
+                function buildBlobUrl() {{
+                    const byteCharacters = atob(pdfData);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {{
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }}
+                    const byteArray = new Uint8Array(byteNumbers);
+                    const blob = new Blob([byteArray], {{type: 'application/pdf'}});
+                    return URL.createObjectURL(blob);
+                }}
+                function openPdf() {{
+                    const blobUrl = buildBlobUrl();
+                    window.open(blobUrl, '_blank');
+                }}
+                function printPdf() {{
+                    const blobUrl = buildBlobUrl();
+                    const printWindow = window.open('', '_blank');
+                    if (!printWindow) {{
+                        return;
+                    }}
+                    printWindow.document.write('<iframe src=\"' + blobUrl + '\" ' +
+                        'style=\"border:0;top:0;left:0;width:100%;height:100%;\" ' +
+                        'id=\"printFrame\"></iframe>');
+                    printWindow.document.close();
+                    const iframe = printWindow.document.getElementById('printFrame');
+                    iframe.onload = () => {{
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    }};
+                }}
+            </script>
+            <div style="display:flex;gap:0.5rem;">
+                <button onclick="openPdf()">View</button>
+                <button onclick="printPdf()">Print</button>
+            </div>
+        """
+        components.v1.html(open_pdf_js, height=50)
