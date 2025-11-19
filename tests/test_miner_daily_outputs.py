@@ -58,6 +58,7 @@ def static_network() -> NetworkData:
         btc_price_usd=settings.DEFAULT_BTC_PRICE_USD,
         difficulty=settings.DEFAULT_NETWORK_DIFFICULTY,
         block_subsidy_btc=settings.DEFAULT_BLOCK_SUBSIDY_BTC,
+        usd_to_gbp=settings.DEFAULT_USD_TO_GBP,
         block_height=None,
     )
 

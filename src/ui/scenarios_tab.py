@@ -5,7 +5,7 @@ from typing import Optional
 
 import streamlit as st
 
-from src.core.scenario_engine import ScenarioResult
+from src.core.scenario_models import ScenarioResult
 from src.ui.scenario_1 import render_scenario_panel
 
 

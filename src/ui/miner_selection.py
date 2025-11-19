@@ -3,29 +3,12 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable
 
 import streamlit as st
 
 from src.core.live_data import NetworkData
-
-
-@dataclass
-class MinerOption:
-    """Represents a single ASIC miner option.
-
-    All pricing here is in USD. Site-level economics are responsible
-    for converting USD -> GBP (or other local currencies).
-    """
-
-    name: str
-    hashrate_th: float  # terahash per second
-    power_w: int  # watts
-    efficiency_j_per_th: float  # joules per terahash
-    supplier: str | None = None
-    price_usd: Optional[float] = None
-
+from src.core.miner_models import MinerOption
 
 # ---------------------------------------------------------------------------
 # Static placeholder catalogue (prices & specs indicative only)
