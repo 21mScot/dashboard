@@ -287,6 +287,13 @@ def render_scenarios_page(
         usd_to_gbp=usd_to_gbp,
     )
 
+    st.session_state["pdf_scenarios"] = {
+        "base": base_result,
+        "best": best_result,
+        "worst": worst_result,
+        "client_share_pct": client_share_pct,
+    }
+
     # ------------------------------------------------------------------
     # Scenario comparison strip (headline view)
     # ------------------------------------------------------------------
