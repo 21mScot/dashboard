@@ -6,7 +6,7 @@ from math import floor
 
 from src.core.live_data import NetworkData
 from src.core.miner_economics import compute_miner_economics
-from src.ui.miner_selection import MinerOption
+from src.core.miner_models import MinerOption
 
 FX_USD_TO_GBP_DEFAULT = 0.8  # tweak as needed
 

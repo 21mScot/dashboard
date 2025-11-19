@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import List
 
-from src.core.scenario_engine import AnnualBaseEconomics
+from src.core.scenario_models import AnnualBaseEconomics
 from src.core.scenarios_period import ScenarioAnnualEconomics
 
 

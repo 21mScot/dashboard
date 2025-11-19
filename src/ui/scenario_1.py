@@ -11,7 +11,7 @@ import streamlit as st
 
 from src.config import settings
 from src.core.capex import CapexBreakdown
-from src.core.scenario_engine import AnnualScenarioEconomics, ScenarioResult
+from src.core.scenario_models import AnnualScenarioEconomics, ScenarioResult
 
 
 def _format_currency(value: float) -> str:

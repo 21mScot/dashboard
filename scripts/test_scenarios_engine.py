@@ -5,11 +5,8 @@ from typing import List
 
 from src.config import settings
 from src.core.scenario_config import build_default_scenarios
-from src.core.scenario_engine import (
-    AnnualBaseEconomics,
-    ScenarioResult,
-    run_scenario,
-)
+from src.core.scenario_engine import run_scenario
+from src.core.scenario_models import AnnualBaseEconomics, ScenarioResult
 
 
 def build_simple_base_years(project_years: int) -> List[AnnualBaseEconomics]:

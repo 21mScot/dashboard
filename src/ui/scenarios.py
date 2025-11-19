@@ -8,13 +8,10 @@ import pandas as pd
 import streamlit as st
 
 from src.config import settings
+from src.core.scenario_calculations import build_base_annual_from_site_metrics
 from src.core.scenario_config import build_default_scenarios
-from src.core.scenario_engine import (
-    AnnualBaseEconomics,
-    ScenarioResult,
-    build_base_annual_from_site_metrics,
-    run_scenario,
-)
+from src.core.scenario_engine import run_scenario
+from src.core.scenario_models import AnnualBaseEconomics, ScenarioResult
 from src.core.site_metrics import SiteMetrics
 from src.ui.scenario_1 import render_scenario_panel
 

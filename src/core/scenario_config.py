@@ -1,32 +1,12 @@
 # src/core/scenario_config.py
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 from src.config import settings
+from src.core.scenario_models import ScenarioConfig
 
 ScenarioName = Literal["base", "best", "worst"]
-
-
-@dataclass(frozen=True)
-class ScenarioConfig:
-    """
-    Pure configuration for one scenario variant, before any calculations.
-
-    All percentages here are expressed as fractions, e.g. +20% -> 0.20.
-    """
-
-    name: ScenarioName
-
-    # Relative shocks vs the "base" assumptions
-    price_pct: float
-    difficulty_pct: float
-    electricity_pct: float
-
-    # Fraction of BTC revenue going to the client (AD operator).
-    # Operator share is 1 - client_revenue_share.
-    client_revenue_share: float
 
 
 def build_default_scenarios(
