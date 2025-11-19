@@ -1,0 +1,3 @@
+# Shared context for Codex sessions.
+# Update this file with any environment or project notes you want Codex to read.
+platform: macOS

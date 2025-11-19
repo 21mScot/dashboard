@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 import streamlit as st
+
+from src.config import settings
 
 
 def _add_years_safe(d: date, years: int) -> date:
@@ -82,7 +84,7 @@ def render_site_inputs() -> SiteInputs:
 
     with col2:
         electricity_cost = st.number_input(
-            "Electricity cost (£ per kWh)",
+            "Cost of generation (£ per kWh)",
             min_value=0.001,
             max_value=1.000,
             value=0.045,
@@ -108,7 +110,7 @@ def render_site_inputs() -> SiteInputs:
 
     go_live_date = st.date_input(
         "Intended go-live date",
-        value=date.today(),
+        value=date.today() + timedelta(weeks=settings.PROJECT_GO_LIVE_INCREMENT_WEEKS),
         help=(
             "When you expect the site to start operating. "
             "Used to calculate the project window and apply halving effects "

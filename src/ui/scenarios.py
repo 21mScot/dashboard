@@ -178,8 +178,8 @@ def _render_scenario_comparison(
     rows = []
 
     for label, result in [
-        ("Best case", best_result),
         ("Base case", base_result),
+        ("Best case", best_result),
         ("Worst case", worst_result),
     ]:
         rows.append(
@@ -221,7 +221,7 @@ def render_scenarios_page(
 
     client_share_pct = st.slider(
         "Your share of BTC revenue (%)",
-        min_value=50,
+        min_value=0,
         max_value=100,
         value=int(settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100),
         step=1,
@@ -231,8 +231,8 @@ def render_scenarios_page(
     operator_share_pct = 100 - client_share_pct
 
     st.caption(
-        f"You keep {client_share_pct:.0f}% of gross BTC revenue · "
-        f"21mScot receives {operator_share_pct:.0f}%."
+        f"You keep {client_share_pct:.0f}% of the gross BTC revenue - "
+        f"the remainder ({operator_share_pct:.0f}%) goes to 21mScot."
     )
 
     # We no longer ask the user for CapEx here; we rely on model-based CapEx
