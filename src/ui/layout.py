@@ -17,7 +17,10 @@ from src.core.scenario_config import build_default_scenarios
 from src.core.scenario_engine import run_scenario
 from src.core.site_metrics import SiteMetrics, compute_site_metrics
 from src.ui.assumptions import render_assumptions_and_methodology
-from src.ui.miner_selection import get_default_miner, load_miner_options
+from src.ui.miner_selection import (
+    get_current_selected_miner,
+    render_miner_picker,
+)
 from src.ui.pdf_export import build_pdf_report
 from src.ui.scenario_1 import render_scenario_panel
 from src.ui.scenarios import (
@@ -303,14 +306,7 @@ def render_dashboard() -> None:
         st.markdown("## 1. Set up your site parameters")
 
         # Miner selection (default or from prior choice)
-        miner_options = list(load_miner_options())
-        miner_by_name = {m.name: m for m in miner_options}
-        default_miner = get_default_miner()
-        selected_miner_name = (
-            st.session_state.get("selected_miner_name") or default_miner.name
-        )
-        selected_miner = miner_by_name.get(selected_miner_name, default_miner)
-        st.session_state["selected_miner_name"] = selected_miner.name
+        selected_miner = get_current_selected_miner()
 
         # Inputs + timeline
         site_inputs = render_site_inputs()
@@ -337,9 +333,9 @@ def render_dashboard() -> None:
         st.markdown("---")
         st.markdown("## 2. Your site daily performance")
         st.markdown(
-            "We've calculated these values with today's network data and hardware "
-            "that's available, so they provide an accurate snapshot of your site's "
-            "potential."
+            "We've calculated these values with today's network data, the most "
+            "efficient hardware that's available and your cost of power, so they "
+            "provide an accurate snapshot of your site's potential."
         )
 
         # Power utilisation (%)
@@ -355,22 +351,23 @@ def render_dashboard() -> None:
         metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
         with metrics_col1:
             st.metric(
+                "Net income / kWh",
+                f"£{site_metrics.net_revenue_per_kwh_gbp:,.3f}",
+                help=(
+                    "Net income divided by the kWh of energy actually used per day. "
+                    "Shows the economic value (£/kWh) of routing your energy into "
+                    "Bitcoin mining instead of alternative uses."
+                ),
+            )
+
+        with metrics_col2:
+            st.metric(
                 "Net income / day",
                 f"£{site_metrics.site_net_revenue_gbp_per_day:,.0f}",
                 help=(
                     "Gross revenue minus electricity cost for all ASICs on site, "
                     "after applying your uptime assumption. This is the net income "
                     "the site generates per day before tax and other overheads."
-                ),
-            )
-        with metrics_col2:
-            st.metric(
-                "Net income per kWh",
-                f"£{site_metrics.net_revenue_per_kwh_gbp:,.3f}",
-                help=(
-                    "Net income divided by the kWh of energy actually used per day. "
-                    "Shows the economic value (£/kWh) of routing your energy into "
-                    "Bitcoin mining instead of alternative uses."
                 ),
             )
         with metrics_col3:
@@ -400,8 +397,7 @@ def render_dashboard() -> None:
             with f2:
                 st.metric(
                     "Gross revenue / day",
-                    f"£{site_metrics.site_revenue_gbp_per_day:,.0f} ("
-                    f"${site_metrics.site_revenue_usd_per_day:,.0f})",
+                    f"£{site_metrics.site_revenue_gbp_per_day:,.0f}",
                     help=(
                         "Expected revenue for one ASIC (based on BTC price, "
                         "difficulty, and block reward), multiplied by the number of "
@@ -457,7 +453,7 @@ def render_dashboard() -> None:
             e1, e2, e3 = st.columns(3)
             with e1:
                 st.metric(
-                    "Net income per kWh",
+                    "Net income / kWh",
                     f"£{site_metrics.net_revenue_per_kwh_gbp:,.3f}",
                     help=(
                         "Net income divided by the kWh of energy actually used per "
@@ -520,41 +516,9 @@ def render_dashboard() -> None:
                         value=f"{selected_miner.power_w} W",
                     )
 
-                sorted_options = sorted(
-                    miner_options, key=lambda m: m.hashrate_th, reverse=True
+                selected_miner = render_miner_picker(
+                    label="Alternative ASIC miners (by efficiency)",
                 )
-                option_labels = [
-                    f"{m.name} — {m.hashrate_th:.0f} TH/s" for m in sorted_options
-                ]
-                label_to_name = {
-                    f"{m.name} — {m.hashrate_th:.0f} TH/s": m.name
-                    for m in sorted_options
-                }
-                current_label = next(
-                    (
-                        lbl
-                        for lbl in option_labels
-                        if label_to_name[lbl] == selected_miner.name
-                    ),
-                    option_labels[0],
-                )
-                selected_label = st.selectbox(
-                    "Alternative ASIC miners",
-                    options=option_labels,
-                    index=option_labels.index(current_label),
-                    key="selected_miner_label",
-                    help="Select from currently available miners.",
-                )
-                if selected_label != current_label:
-                    st.session_state["selected_miner_name"] = label_to_name[
-                        selected_label
-                    ]
-                    # Trigger rerun for immediate update across sections
-                    rerun_fn = getattr(st, "rerun", None) or getattr(
-                        st, "experimental_rerun", None
-                    )
-                    if rerun_fn:
-                        rerun_fn()
 
         st.markdown("---")
         st.markdown("## 3. Your financial forecasts")

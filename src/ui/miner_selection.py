@@ -205,4 +205,56 @@ def get_default_miner() -> MinerOption:
     return next(iter(sorted_miners.values()))
 
 
+def _load_sorted_miners() -> list[MinerOption]:
+    """Miners sorted by hashrate descending."""
+    return list(_get_hashrate_sorted_miners().values())
+
+
+def get_current_selected_miner() -> MinerOption:
+    """Return the miner stored in session_state or fall back to default."""
+    options = _load_sorted_miners()
+    by_name = {m.name: m for m in options}
+    default_miner = get_default_miner()
+    current_name = st.session_state.get("selected_miner_name", default_miner.name)
+    return by_name.get(current_name, default_miner)
+
+
+def render_miner_picker(label: str = "Alternative ASIC miners") -> MinerOption:
+    """Render a selectbox for miners and return the chosen MinerOption."""
+    options = sorted(
+        _load_sorted_miners(), key=lambda m: m.efficiency_j_per_th
+    )  # best (lower J/TH) first
+    by_label = {
+        (
+            f"{m.name} — {m.efficiency_j_per_th:.1f} J/TH · "
+            f"{m.hashrate_th:.0f} TH/s · {m.power_w} W"
+        ): m
+        for m in options
+    }
+    labels = list(by_label.keys())
+
+    current_miner = get_current_selected_miner()
+    current_label = next(
+        (lbl for lbl, miner in by_label.items() if miner.name == current_miner.name),
+        labels[0],
+    )
+
+    selected_label = st.selectbox(
+        label,
+        options=labels,
+        index=labels.index(current_label),
+        help="Select from currently available miners.",
+        key="selected_miner_label",
+    )
+
+    selected_miner = by_label[selected_label]
+    if selected_miner.name != current_miner.name:
+        st.session_state["selected_miner_name"] = selected_miner.name
+        rerun_fn = getattr(st, "rerun", None) or getattr(st, "experimental_rerun", None)
+        if rerun_fn:
+            rerun_fn()
+
+    return selected_miner
+
+
 # ---------------------------------------------------------------------------
