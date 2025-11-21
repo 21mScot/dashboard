@@ -85,8 +85,6 @@ def build_pdf_report(
             ["Electricity cost", f"£{site_inputs.electricity_cost:.3f} / kWh"],
             ["Expected uptime", _format_percentage(site_inputs.uptime_pct)],
             ["Cooling overhead", _format_percentage(site_inputs.cooling_overhead_pct)],
-            ["Commercial model", site_inputs.commercial_model],
-            ["Client CapEx share", f"{site_inputs.capex_client_pct}%"],
         ],
         hAlign="LEFT",
     )
@@ -94,7 +92,7 @@ def build_pdf_report(
     story.append(site_table)
     story.append(Spacer(1, 12))
 
-    story.append(Paragraph("Selected miner", Styles["Heading2"]))
+    story.append(Paragraph("Miner assumption", Styles["Heading2"]))
     miner_table = Table(
         [
             ["Model", miner.name],

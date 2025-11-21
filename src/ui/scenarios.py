@@ -82,7 +82,7 @@ def _scenario_expander_title(label: str, result: ScenarioResult) -> str:
         f"Scenario {label} – "
         f"£{net_income:,.0f} net income · "
         f"{margin_pct:,.1f}% Avg EBITDA margin · "
-        f"{total_btc:,.3f} BTC"
+        f"{total_btc:,.3f} BTC..."
     )
 
 
@@ -166,6 +166,7 @@ def _render_scenario_comparison(
     base_result: ScenarioResult,
     best_result: ScenarioResult,
     worst_result: ScenarioResult,
+    heading: str = "Scenario comparison table",
 ) -> None:
     """
     Render a compact comparison of best / base / worst scenarios
@@ -179,21 +180,100 @@ def _render_scenario_comparison(
         ("Best case", best_result),
         ("Worst case", worst_result),
     ]:
+        client_share = float(getattr(result.config, "client_revenue_share", 0.0))
+        your_btc = result.total_btc * client_share
+        operator_btc = result.total_btc - your_btc
         rows.append(
             {
                 "Scenario": label,
-                "Client net income": _format_currency(
-                    result.total_client_net_income_gbp
-                ),
-                "Payback period": _format_payback(result.client_payback_years),
-                "Total BTC (project)": _format_btc(result.total_btc),
+                "Your net income": result.total_client_net_income_gbp,
+                "Your BTC": your_btc,
+                "Total BTC": result.total_btc,
+                "21Scot BTC": operator_btc,
             }
         )
 
     df = pd.DataFrame(rows)
 
-    st.markdown("### Scenario comparison (headline metrics)")
-    st.dataframe(df, width="content", hide_index=True)
+    st.markdown(heading)
+
+    def _fmt_currency(v: float) -> str:
+        try:
+            return f"£{float(v):,.0f}"
+        except Exception:
+            return str(v)
+
+    def _fmt_decimal(v: float) -> str:
+        try:
+            return f"{float(v):,.3f}"
+        except Exception:
+            return str(v)
+
+    header_cells = "".join(
+        f"<th>{col}</th>"
+        for col in [
+            "Scenario",
+            "Your net income",
+            "Your BTC",
+            "Total BTC",
+            "21Scot BTC",
+        ]
+    )
+    body_rows = []
+    for _, row in df.iterrows():
+        body_rows.append(
+            "<tr>"
+            f"<td class='text'>{row['Scenario']}</td>"
+            f"<td class='num'>{_fmt_currency(row['Your net income'])}</td>"
+            f"<td class='num'>{_fmt_decimal(row['Your BTC'])}</td>"
+            f"<td class='num'>{_fmt_decimal(row['Total BTC'])}</td>"
+            f"<td class='num'>{_fmt_decimal(row['21Scot BTC'])}</td>"
+            "</tr>"
+        )
+    value_font_size = f"{settings.METRIC_FONT_SIZE_REM}rem"
+    value_font_weight = settings.METRIC_FONT_WEIGHT
+    label_font_size = f"{settings.METRIC_LABEL_FONT_SIZE_REM}rem"
+    label_font_weight = settings.METRIC_LABEL_FONT_WEIGHT
+    font_family = settings.METRIC_FONT_FAMILY
+
+    table_html = f"""
+    <style>
+      table.scenario-comparison-table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0.5rem;
+        font-family: {font_family};
+      }}
+      table.scenario-comparison-table th {{
+        text-align: center;
+        font-size: {label_font_size};
+        font-weight: {label_font_weight};
+        padding: 0.5rem;
+        border-bottom: 1px solid #ddd;
+      }}
+      table.scenario-comparison-table td {{
+        padding: 0.45rem;
+        border-bottom: 1px solid #eee;
+        font-size: {label_font_size};
+        font-weight: {label_font_weight};
+      }}
+      table.scenario-comparison-table td.num {{
+        text-align: right;
+        font-size: {value_font_size};
+        font-weight: {value_font_weight};
+      }}
+      table.scenario-comparison-table td.text {{
+        text-align: left;
+        font-size: {label_font_size};
+        font-weight: {label_font_weight};
+      }}
+    </style>
+    <table class="scenario-comparison-table">
+      <thead><tr>{header_cells}</tr></thead>
+      <tbody>{"".join(body_rows)}</tbody>
+    </table>
+    """
+    st.markdown(table_html, unsafe_allow_html=True)
 
 
 def render_scenarios_page(

@@ -194,3 +194,15 @@ def render_miner_selection(
 
 
 # ---------------------------------------------------------------------------
+# Non-UI helpers
+# ---------------------------------------------------------------------------
+def get_default_miner() -> MinerOption:
+    """Return the default miner option when no user selection is shown."""
+    sorted_miners = _get_hashrate_sorted_miners()
+    if not sorted_miners:
+        msg = "No miner options available."
+        raise ValueError(msg)
+    return next(iter(sorted_miners.values()))
+
+
+# ---------------------------------------------------------------------------

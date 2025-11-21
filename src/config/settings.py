@@ -52,6 +52,13 @@ SCENARIO_FALLBACK_PROJECT_YEARS = 4
 # UI defaults
 PROJECT_GO_LIVE_INCREMENT_WEEKS = 4
 
+# Streamlit metric styling (default theme)
+METRIC_FONT_FAMILY = "Source Sans Pro, sans-serif"
+METRIC_FONT_WEIGHT = 700  # bold weight used for metric values
+METRIC_FONT_SIZE_REM = 1.0  # metric value size in rem (≈32px at 16px root)
+METRIC_LABEL_FONT_WEIGHT = 600
+METRIC_LABEL_FONT_SIZE_REM = 0.875  # label size in rem (≈14px at 16px root)
+
 # --- CapEx assumptions (client – AD operator) ---
 # Phase 1: constant values; later made configurable.
 

@@ -36,10 +36,6 @@ class SiteInputs:
     uptime_pct: int
     cooling_overhead_pct: int
 
-    # Commercial model
-    commercial_model: str
-    capex_client_pct: int  # implied by the chosen model
-
 
 def render_site_inputs() -> SiteInputs:
     """Render the user inputs for the site-level configuration.
@@ -47,24 +43,17 @@ def render_site_inputs() -> SiteInputs:
     Returns
     -------
     SiteInputs
-        Object containing power, tariffs, project dates, and commercial model.
+        Object containing power, tariffs, and project dates.
     """
 
-    st.subheader("1. Setup your site parameters")
     st.markdown(
-        "Provide the basic information about your mining site. "
+        "Provide the basic information about your site. "
         "These settings are used to estimate capacity, revenue, costs and "
-        "project-level financials."
+        "forecast financials."
     )
 
-    # ----------------------------------------------------------------------
-    # Site capacity & operating costs
-    # ----------------------------------------------------------------------
-    st.subheader("Site Capacity & Operating Costs")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
+    col_power, col_cost = st.columns(2)
+    with col_power:
         site_power_kw = st.number_input(
             "Available site power (kW)",
             min_value=1,
@@ -74,18 +63,11 @@ def render_site_inputs() -> SiteInputs:
             format="%d",
             help="Total electrical capacity available for miners.",
         )
-        uptime_pct = st.slider(
-            "Expected uptime (%)",
-            min_value=80,
-            max_value=100,
-            value=98,
-            help="Percentage of time the site is expected to remain online.",
-        )
 
-    with col2:
+    with col_cost:
         electricity_cost = st.number_input(
             "Cost of generation (£ per kWh)",
-            min_value=0.001,
+            min_value=0.0,
             max_value=1.000,
             value=0.045,
             step=0.001,
@@ -93,85 +75,49 @@ def render_site_inputs() -> SiteInputs:
             help="Your electricity tariff, including any standing charges.",
         )
 
-        cooling_overhead_pct = st.slider(
-            "Cooling + overhead (%)",
-            min_value=0,
-            max_value=20,
-            value=2,
-            help="Additional overhead as a percentage of miner consumption.",
-        )
-
-    st.divider()
-
-    # ----------------------------------------------------------------------
-    # Project timeline
-    # ----------------------------------------------------------------------
-    st.subheader("Project Timeline")
-
-    go_live_date = st.date_input(
-        "Intended go-live date",
-        value=date.today() + timedelta(weeks=settings.PROJECT_GO_LIVE_INCREMENT_WEEKS),
-        help=(
-            "When you expect the site to start operating. "
-            "Used to calculate the project window and apply halving effects "
-            "in the Scenarios & Risk tab."
-        ),
+    uptime_pct = st.slider(
+        "Expected uptime (%)",
+        min_value=80,
+        max_value=100,
+        value=98,
+        help="Percentage of time the site is expected to remain online.",
     )
+    # Cooling overhead hidden from UI but retained for calculations
+    cooling_overhead_pct = 0
 
-    project_years = st.slider(
-        "Project duration (years from go-live)",
-        min_value=1,
-        max_value=5,
-        value=4,
-        help="How long you expect this site to run after the intended go-live date.",
-    )
-
-    project_end_date = _add_years_safe(go_live_date, project_years)
-
-    st.caption(
-        f"**Project window:** {go_live_date:%d %b %Y} → {project_end_date:%d %b %Y}"
-    )
-
-    # Make project duration available to other tabs (e.g. Scenarios)
-    st.session_state["project_years_from_go_live"] = int(project_years)
-    st.session_state["project_years"] = int(project_years)
-
-    st.divider()
-
-    # ----------------------------------------------------------------------
-    # Commercial model (client-facing)
-    # ----------------------------------------------------------------------
-    st.subheader("Commercial Model")
-
-    commercial_model = st.radio(
-        "Select your preferred commercial model",
-        [
-            "Client-owned hardware",
-            "Operator-owned hardware",
-            "Hybrid partnership (shared ownership)",
-        ],
-        help=(
-            "This determines how hardware costs and revenue are shared between "
-            "you and the operator."
-        ),
-    )
-
-    if commercial_model == "Hybrid partnership (shared ownership)":
-        capex_client_pct = st.slider(
-            "Client share of hardware cost (%)",
-            min_value=0,
-            max_value=100,
-            value=50,
+    with st.expander("Project timeline details...", expanded=False):
+        go_live_date = st.date_input(
+            "Intended go-live date...current installations, six weeks from today.",
+            value=date.today()
+            + timedelta(weeks=settings.PROJECT_GO_LIVE_INCREMENT_WEEKS),
             help=(
-                "Percentage of the mining hardware purchased by the client. "
-                "Revenue share will typically follow this split."
+                "When you expect the site to start operating. "
+                "Used to calculate the project window and apply halving effects "
+                "in the Scenarios & Risk tab."
             ),
         )
-    elif commercial_model == "Client-owned hardware":
-        capex_client_pct = 100
-    else:
-        # Operator-owned hardware
-        capex_client_pct = 0
+
+        project_years = st.slider(
+            "Project duration (years from go-live)",
+            min_value=1,
+            max_value=5,
+            value=4,
+            help=(
+                "How long you expect this site to run after the intended go-live "
+                "date."
+            ),
+        )
+
+        project_end_date = _add_years_safe(go_live_date, project_years)
+
+        st.caption(
+            f"**Project window:** {go_live_date:%d %b %Y} → "
+            f"{project_end_date:%d %b %Y}"
+        )
+
+        # Make project duration available to other tabs (e.g. Scenarios)
+        st.session_state["project_years_from_go_live"] = int(project_years)
+        st.session_state["project_years"] = int(project_years)
 
     # ----------------------------------------------------------------------
     # Build and return the SiteInputs object
@@ -184,8 +130,6 @@ def render_site_inputs() -> SiteInputs:
         electricity_cost=electricity_cost,
         uptime_pct=uptime_pct,
         cooling_overhead_pct=cooling_overhead_pct,
-        commercial_model=commercial_model,
-        capex_client_pct=capex_client_pct,
     )
 
     return site_inputs
