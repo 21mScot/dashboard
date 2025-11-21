@@ -1,6 +1,8 @@
 # scripts/compare_external.py
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
 from src.config import settings
 from src.core.live_data import NetworkData
 from src.core.miner_economics import compute_miner_economics
@@ -33,6 +35,10 @@ def print_economics(
         difficulty=difficulty,
         block_subsidy_btc=subsidy_btc,
         block_height=None,
+        usd_to_gbp=settings.DEFAULT_USD_TO_GBP,
+        as_of_utc=datetime.now(timezone.utc),
+        hashprice_usd_per_ph_day=None,
+        hashprice_as_of_utc=None,
     )
 
     print(f"\n=== {label} ===")
@@ -43,7 +49,8 @@ def print_economics(
     )
     print("-" * 110)
     print(
-        f"{'Miner':32}  {'TH/s':>6}  {'Power (W)':>10}  {'BTC/day':>12}  {'USD/day':>12}"
+        f"{'Miner':32}  {'TH/s':>6}  {'Power (W)':>10}  "
+        f"{'BTC/day':>12}  {'USD/day':>12}"
     )
     print("-" * 110)
 

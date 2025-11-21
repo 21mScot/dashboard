@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Optional
 
 import streamlit as st
 
 from src.core.live_data import NetworkData
+from src.core.miner_economics import compute_miner_economics
 from src.core.miner_models import MinerOption
 
 # ---------------------------------------------------------------------------
@@ -196,31 +197,102 @@ def render_miner_selection(
 # ---------------------------------------------------------------------------
 # Non-UI helpers
 # ---------------------------------------------------------------------------
-def get_default_miner() -> MinerOption:
-    """Return the default miner option when no user selection is shown."""
-    sorted_miners = _get_hashrate_sorted_miners()
-    if not sorted_miners:
-        msg = "No miner options available."
-        raise ValueError(msg)
-    return next(iter(sorted_miners.values()))
-
-
 def _load_sorted_miners() -> list[MinerOption]:
     """Miners sorted by hashrate descending."""
     return list(_get_hashrate_sorted_miners().values())
 
 
-def get_current_selected_miner() -> MinerOption:
-    """Return the miner stored in session_state or fall back to default."""
+def get_current_selected_miner() -> Optional[MinerOption]:
+    """Return the miner stored in session_state (if any)."""
     options = _load_sorted_miners()
     by_name = {m.name: m for m in options}
-    default_miner = get_default_miner()
-    current_name = st.session_state.get("selected_miner_name", default_miner.name)
-    return by_name.get(current_name, default_miner)
+    current_name = st.session_state.get("selected_miner_name")
+    if not current_name:
+        return None
+    return by_name.get(current_name)
 
 
-def render_miner_picker(label: str = "Alternative ASIC miners") -> MinerOption:
-    """Render a selectbox for miners and return the chosen MinerOption."""
+def clear_selected_miner() -> None:
+    """Clear any persisted miner selection."""
+    st.session_state.pop("selected_miner_name", None)
+    st.session_state.pop("selected_miner_label", None)
+
+
+def _estimate_payback_days(
+    miner: MinerOption,
+    network: NetworkData,
+    power_price_gbp_per_kwh: float,
+    uptime_pct: float,
+) -> Optional[float]:
+    """Estimate simple payback in days; returns None if not viable."""
+    uptime_factor = max(0.0, min(uptime_pct, 100.0)) / 100.0
+
+    econ = compute_miner_economics(miner.hashrate_th, network)
+    revenue_usd_per_day = econ.revenue_usd_per_day * uptime_factor
+    revenue_gbp_per_day = revenue_usd_per_day * network.usd_to_gbp
+
+    kwh_per_day = (miner.power_w / 1000.0) * 24.0 * uptime_factor
+    power_cost_gbp_per_day = kwh_per_day * power_price_gbp_per_kwh
+
+    profit_gbp_per_day = revenue_gbp_per_day - power_cost_gbp_per_day
+    if profit_gbp_per_day <= 0:
+        return None
+
+    price_gbp = (miner.price_usd or 0.0) * network.usd_to_gbp
+    if price_gbp <= 0:
+        return None
+
+    return price_gbp / profit_gbp_per_day
+
+
+def maybe_autoselect_miner(
+    site_power_kw: float,
+    power_price_gbp_per_kwh: float,
+    uptime_pct: float,
+    network: NetworkData,
+) -> None:
+    """
+    If the user has started entering inputs and no miner is selected yet,
+    choose the miner with the lowest simple payback (if viable).
+    """
+    if st.session_state.get("selected_miner_name"):
+        return
+
+    # Trigger only after any of the key inputs have been touched.
+    if all(
+        val in (None, 0, 0.0)
+        for val in (site_power_kw, power_price_gbp_per_kwh, uptime_pct)
+    ):
+        return
+
+    options = _load_sorted_miners()
+    if not options:
+        return
+
+    best_miner: Optional[MinerOption] = None
+    best_payback: Optional[float] = None
+
+    for miner in options:
+        payback = _estimate_payback_days(
+            miner=miner,
+            network=network,
+            power_price_gbp_per_kwh=power_price_gbp_per_kwh,
+            uptime_pct=uptime_pct,
+        )
+        if payback is None:
+            continue
+        if best_payback is None or payback < best_payback:
+            best_payback = payback
+            best_miner = miner
+
+    if best_miner:
+        st.session_state["selected_miner_name"] = best_miner.name
+
+
+def render_miner_picker(
+    label: str = "Alternative ASIC miners",
+) -> Optional[MinerOption]:
+    """Render a selectbox for miners and return the chosen MinerOption (or None)."""
     options = sorted(
         _load_sorted_miners(), key=lambda m: m.efficiency_j_per_th
     )  # best (lower J/TH) first
@@ -231,13 +303,21 @@ def render_miner_picker(label: str = "Alternative ASIC miners") -> MinerOption:
         ): m
         for m in options
     }
-    labels = list(by_label.keys())
+    placeholder = "Select a miner"
+    labels = [placeholder] + list(by_label.keys())
 
     current_miner = get_current_selected_miner()
-    current_label = next(
-        (lbl for lbl, miner in by_label.items() if miner.name == current_miner.name),
-        labels[0],
-    )
+    if current_miner:
+        current_label = next(
+            (
+                lbl
+                for lbl, miner in by_label.items()
+                if miner.name == current_miner.name
+            ),
+            placeholder,
+        )
+    else:
+        current_label = placeholder
 
     selected_label = st.selectbox(
         label,
@@ -247,8 +327,11 @@ def render_miner_picker(label: str = "Alternative ASIC miners") -> MinerOption:
         key="selected_miner_label",
     )
 
+    if selected_label == placeholder:
+        return current_miner
+
     selected_miner = by_label[selected_label]
-    if selected_miner.name != current_miner.name:
+    if not current_miner or selected_miner.name != current_miner.name:
         st.session_state["selected_miner_name"] = selected_miner.name
         rerun_fn = getattr(st, "rerun", None) or getattr(st, "experimental_rerun", None)
         if rerun_fn:

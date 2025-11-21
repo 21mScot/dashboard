@@ -4,7 +4,10 @@ from __future__ import annotations
 import base64
 import textwrap
 from datetime import datetime, timezone
+from typing import List, Optional
 
+import altair as alt
+import pandas as pd
 import streamlit as st
 
 from src.config import settings
@@ -12,6 +15,7 @@ from src.config.settings import LIVE_DATA_CACHE_TTL_S
 from src.config.version import APP_VERSION, PRIVACY_URL, TERMS_URL
 from src.core.capex import compute_capex_breakdown
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
+from src.core.miner_economics import compute_miner_economics
 from src.core.scenario_calculations import build_base_annual_from_site_metrics
 from src.core.scenario_config import build_default_scenarios
 from src.core.scenario_engine import run_scenario
@@ -19,6 +23,8 @@ from src.core.site_metrics import SiteMetrics, compute_site_metrics
 from src.ui.assumptions import render_assumptions_and_methodology
 from src.ui.miner_selection import (
     get_current_selected_miner,
+    load_miner_options,
+    maybe_autoselect_miner,
     render_miner_picker,
 )
 from src.ui.pdf_export import build_pdf_report
@@ -78,6 +84,9 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             block_subsidy_btc=float(static_subsidy),
             usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
+            as_of_utc=datetime.now(timezone.utc),
+            hashprice_usd_per_ph_day=None,
+            hashprice_as_of_utc=None,
         )
         return static_data, False
 
@@ -110,6 +119,9 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             block_subsidy_btc=float(static_subsidy),
             usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
+            as_of_utc=datetime.now(timezone.utc),
+            hashprice_usd_per_ph_day=None,
+            hashprice_as_of_utc=None,
         )
         return static_data, False
 
@@ -122,6 +134,9 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             block_subsidy_btc=float(static_subsidy),
             usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
+            as_of_utc=datetime.now(timezone.utc),
+            hashprice_usd_per_ph_day=None,
+            hashprice_as_of_utc=None,
         )
         return static_data, False
 
@@ -172,6 +187,22 @@ def build_site_metrics_from_inputs(
         or 0.0
     )
 
+    if selected_miner is None:
+        return SiteMetrics(
+            asics_supported=0,
+            power_per_asic_kw=0.0,
+            site_power_used_kw=0.0,
+            site_power_available_kw=site_power_kw,
+            spare_capacity_kw=site_power_kw,
+            site_btc_per_day=0.0,
+            site_revenue_usd_per_day=0.0,
+            site_revenue_gbp_per_day=0.0,
+            site_power_cost_gbp_per_day=0.0,
+            site_net_revenue_gbp_per_day=0.0,
+            net_revenue_per_kw_gbp_per_day=0.0,
+            net_revenue_per_kwh_gbp=0.0,
+        )
+
     return compute_site_metrics(
         miner=selected_miner,
         network=network_data,
@@ -181,6 +212,64 @@ def build_site_metrics_from_inputs(
         cooling_overhead_pct=cooling_overhead_pct,
         usd_to_gbp_rate=network_data.usd_to_gbp,
     )
+
+
+def _build_breakeven_df(
+    miners: List,
+    network_data: NetworkData,
+    uptime_pct: float,
+) -> pd.DataFrame:
+    uptime_factor = max(0.0, min(uptime_pct, 100.0)) / 100.0
+    rows = []
+    for miner in miners:
+        econ = compute_miner_economics(miner.hashrate_th, network_data)
+        revenue_gbp = econ.revenue_usd_per_day * network_data.usd_to_gbp * uptime_factor
+        kwh_day = (miner.power_w / 1000.0) * 24.0 * uptime_factor
+        if kwh_day > 0:
+            breakeven_price = revenue_gbp / kwh_day
+        else:
+            breakeven_price = None
+        rows.append(
+            {
+                "miner": miner.name,
+                "efficiency_j_per_th": miner.efficiency_j_per_th,
+                "breakeven_price_gbp_per_kwh": breakeven_price,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _build_payback_df(
+    miners: List,
+    network_data: NetworkData,
+    uptime_pct: float,
+    extra_power_price: Optional[float] = None,
+) -> pd.DataFrame:
+    uptime_factor = max(0.0, min(uptime_pct, 100.0)) / 100.0
+    power_prices = [p / 1000 for p in range(5, 151, 5)]  # £0.005 .. £0.150
+    if extra_power_price and extra_power_price not in power_prices:
+        power_prices.append(extra_power_price)
+    rows = []
+    for miner in miners:
+        econ = compute_miner_economics(miner.hashrate_th, network_data)
+        revenue_gbp = econ.revenue_usd_per_day * network_data.usd_to_gbp * uptime_factor
+        kwh_day = (miner.power_w / 1000.0) * 24.0 * uptime_factor
+        price_gbp = (miner.price_usd or 0.0) * network_data.usd_to_gbp
+        for power_price in power_prices:
+            profit = revenue_gbp - kwh_day * power_price
+            if profit <= 0 or price_gbp <= 0:
+                payback = None
+            else:
+                payback = price_gbp / profit
+            rows.append(
+                {
+                    "miner": miner.name,
+                    "efficiency_j_per_th": miner.efficiency_j_per_th,
+                    "power_price_gbp_per_kwh": power_price,
+                    "payback_days": payback,
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------
@@ -271,9 +360,17 @@ def render_dashboard() -> None:
     else:
         st.sidebar.info("Using static BTC price and difficulty (live disabled).")
 
-    # This always shows the 'current date and time'
-    # That is not necessarily when the data was last updated.
-    last_updated_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    data_timestamp_utc = (
+        network_data.as_of_utc.strftime("%Y-%m-%d %H:%M UTC")
+        if network_data.as_of_utc
+        else "N/A"
+    )
+    hashprice_timestamp_utc = (
+        network_data.hashprice_as_of_utc.strftime("%Y-%m-%d %H:%M UTC")
+        if getattr(network_data, "hashprice_as_of_utc", None)
+        else data_timestamp_utc
+    )
+    page_render_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     with st.sidebar.expander("BTC network data in use", expanded=True):
         st.metric("BTC price (USD)", f"${network_data.btc_price_usd:,.0f}")
@@ -281,12 +378,33 @@ def render_dashboard() -> None:
         st.metric("Block subsidy", f"{network_data.block_subsidy_btc} BTC")
         st.metric("Block height", network_data.block_height or "N/A")
         st.caption("These values drive all BTC/day and revenue calculations.")
-        st.caption(f"Last updated: {last_updated_utc}")
+        st.caption(f"Data timestamp (UTC): {data_timestamp_utc}")
+        st.caption(f"Page render time (UTC): {page_render_utc}")
 
     with st.sidebar.expander("Foreign exchange value", expanded=True):
         st.metric("USD/GBP exchange rate", f"${network_data.usd_to_gbp:.3f}")
         st.caption("This value drives all the USD to GBP currency conversions.")
-        st.caption(f"Last updated: {last_updated_utc}")
+        st.caption(f"Data timestamp (UTC): {data_timestamp_utc}")
+        st.caption(f"Page render time (UTC): {page_render_utc}")
+
+    with st.sidebar.expander("Hashprice (Luxor)", expanded=True):
+        hashprice_val = getattr(network_data, "hashprice_usd_per_ph_day", None)
+        if hashprice_val is not None:
+            st.metric(
+                "Hashprice",
+                f"${hashprice_val:,.2f} / PH/s / day",
+                help=(
+                    "Luxor hashprice in USD per PH/s per day. "
+                    "hashrate-index API source."
+                ),
+            )
+            st.caption(f"Data timestamp (UTC): {hashprice_timestamp_utc}")
+        else:
+            st.info(
+                "Hashprice unavailable right now (Luxor endpoint), showing N/A. "
+                "BTC/d calculations still use difficulty & subsidy."
+            )
+        st.caption(f"Page render time (UTC): {page_render_utc}")
 
     # ---------------------------------------------------------
     # TABS
@@ -305,11 +423,24 @@ def render_dashboard() -> None:
     with tab_overview:
         st.markdown("## 1. Set up your site parameters")
 
-        # Miner selection (default or from prior choice)
-        selected_miner = get_current_selected_miner()
-
         # Inputs + timeline
         site_inputs = render_site_inputs()
+
+        # Derived effective power (kW) once user starts entering data
+        load_factor = (site_inputs.uptime_pct or 0) / 100.0
+        effective_power_kw = site_inputs.site_power_kw * load_factor
+        st.session_state["effective_power_kw"] = effective_power_kw
+
+        # Try to auto-select a miner only after the user edits inputs
+        maybe_autoselect_miner(
+            site_power_kw=site_inputs.site_power_kw,
+            power_price_gbp_per_kwh=site_inputs.electricity_cost,
+            uptime_pct=site_inputs.uptime_pct,
+            network=network_data,
+        )
+
+        # Miner selection (user-picked or auto-selected)
+        selected_miner = get_current_selected_miner()
 
         # Compute site metrics from the current inputs
         site_metrics = build_site_metrics_from_inputs(
@@ -330,60 +461,44 @@ def render_dashboard() -> None:
         st.session_state["pdf_site_metrics"] = site_metrics
         st.session_state["pdf_capex_breakdown"] = capex_breakdown
 
-        st.markdown("---")
-        st.markdown("## 2. Your site daily performance")
-        st.markdown(
-            "We've calculated these values with today's network data, the most "
-            "efficient hardware that's available and your cost of power, so they "
-            "provide an accurate snapshot of your site's potential."
-        )
-
-        # Power utilisation (%)
-        if site_metrics.site_power_available_kw > 0:
-            power_used_pct = (
-                site_metrics.site_power_used_kw
-                / site_metrics.site_power_available_kw
-                * 100.0
+        if selected_miner is None:
+            st.info(
+                "Enter site power, £/kWh, and uptime to begin. "
+                "Once inputs are provided, we will choose the fastest payback miner, "
+                "and you can override it via the picker."
             )
         else:
-            power_used_pct = 0.0
-
-        metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
-        with metrics_col1:
-            st.metric(
-                "Net income / kWh",
-                f"£{site_metrics.net_revenue_per_kwh_gbp:,.3f}",
-                help=(
-                    "Net income divided by the kWh of energy actually used per day. "
-                    "Shows the economic value (£/kWh) of routing your energy into "
-                    "Bitcoin mining instead of alternative uses."
-                ),
+            st.markdown("---")
+            st.markdown("## 2. Your site daily performance")
+            st.markdown(
+                "We've calculated these values with today's network data, the most "
+                "efficient hardware that's available and your cost of power, so they "
+                "provide an accurate snapshot of your site's potential."
             )
 
-        with metrics_col2:
-            st.metric(
-                "Net income / day",
-                f"£{site_metrics.site_net_revenue_gbp_per_day:,.0f}",
-                help=(
-                    "Gross revenue minus electricity cost for all ASICs on site, "
-                    "after applying your uptime assumption. This is the net income "
-                    "the site generates per day before tax and other overheads."
-                ),
-            )
-        with metrics_col3:
-            st.metric(
-                "BTC mined / day",
-                f"{site_metrics.site_btc_per_day:.5f} BTC",
-                help=(
-                    "Total BTC expected per day from all ASICs at the configured "
-                    "uptime, using the current network difficulty and block subsidy."
-                ),
-            )
+            # Power utilisation (%)
+            if site_metrics.site_power_available_kw > 0:
+                power_used_pct = (
+                    site_metrics.site_power_used_kw
+                    / site_metrics.site_power_available_kw
+                    * 100.0
+                )
+            else:
+                power_used_pct = 0.0
 
-        with st.expander("Site performance details...", expanded=False):
-            # Row 1 — Financials
-            f1, f2, f3 = st.columns(3)
-            with f1:
+            metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+            with metrics_col1:
+                st.metric(
+                    "Net income / kWh",
+                    f"£{site_metrics.net_revenue_per_kwh_gbp:,.3f}",
+                    help=(
+                        "Net income divided by the kWh of energy actually used per "
+                        "day. Shows the economic value (£/kWh) of routing your energy "
+                        "into Bitcoin mining instead of alternative uses."
+                    ),
+                )
+
+            with metrics_col2:
                 st.metric(
                     "Net income / day",
                     f"£{site_metrics.site_net_revenue_gbp_per_day:,.0f}",
@@ -394,84 +509,7 @@ def render_dashboard() -> None:
                         "overheads."
                     ),
                 )
-            with f2:
-                st.metric(
-                    "Gross revenue / day",
-                    f"£{site_metrics.site_revenue_gbp_per_day:,.0f}",
-                    help=(
-                        "Expected revenue for one ASIC (based on BTC price, "
-                        "difficulty, and block reward), multiplied by the number of "
-                        "ASICs running, adjusted for uptime, and converted from USD "
-                        "to GBP using the FX rate in the sidebar."
-                    ),
-                )
-            with f3:
-                st.metric(
-                    "Electricity cost / day",
-                    f"£{site_metrics.site_power_cost_gbp_per_day:,.0f}",
-                    help=(
-                        "Estimated electricity spend per day for running all ASICs, "
-                        "including cooling/overhead power. Based on site kWh usage, "
-                        "your electricity tariff (£/kWh), and uptime."
-                    ),
-                )
-
-            # Row 2 — Utilisation & physics
-            u1, u2, u3 = st.columns(3)
-            with u1:
-                st.metric(
-                    "Site power utilisation (%)",
-                    f"{power_used_pct:.1f} %",
-                    help=(
-                        "How much of your available site power is currently being "
-                        "used by ASICs (including cooling/overhead). Calculated as "
-                        "used kW ÷ available kW."
-                    ),
-                )
-            with u2:
-                st.metric(
-                    "Power used (kW)",
-                    f"{site_metrics.site_power_used_kw:.1f} kW",
-                    help=(
-                        "Total electrical load drawn by all ASICs, including cooling "
-                        "and overhead. This is the kW actually committed to mining "
-                        "when the site is fully running."
-                    ),
-                )
-            with u3:
-                st.metric(
-                    "Power per ASIC (incl. overhead)",
-                    f"{site_metrics.power_per_asic_kw:.2f} kW",
-                    help=(
-                        "Effective kW per ASIC including cooling/overhead. Calculated "
-                        "from the miner nameplate power plus the cooling/overhead "
-                        "percentage set in the inputs."
-                    ),
-                )
-
-            # Row 3 — Efficiency & scale
-            e1, e2, e3 = st.columns(3)
-            with e1:
-                st.metric(
-                    "Net income / kWh",
-                    f"£{site_metrics.net_revenue_per_kwh_gbp:,.3f}",
-                    help=(
-                        "Net income divided by the kWh of energy actually used per "
-                        "day. Shows the economic value (£/kWh) of routing your energy "
-                        "into Bitcoin mining instead of alternative uses."
-                    ),
-                )
-            with e2:
-                st.metric(
-                    "ASICs supported",
-                    f"{site_metrics.asics_supported}",
-                    help=(
-                        "Maximum number of ASICs the site can support with the "
-                        "available power, after accounting for cooling/overhead. "
-                        "Calculated as site power capacity ÷ power per ASIC."
-                    ),
-                )
-            with e3:
+            with metrics_col3:
                 st.metric(
                     "BTC mined / day",
                     f"{site_metrics.site_btc_per_day:.5f} BTC",
@@ -482,10 +520,112 @@ def render_dashboard() -> None:
                     ),
                 )
 
-            st.caption(
-                f"Approx. {site_metrics.spare_capacity_kw:.1f} kW spare capacity "
-                "remains for future expansion or overheads."
-            )
+            with st.expander("Site performance details...", expanded=False):
+                # Row 1 — Financials
+                f1, f2, f3 = st.columns(3)
+                with f1:
+                    st.metric(
+                        "Net income / day",
+                        f"£{site_metrics.site_net_revenue_gbp_per_day:,.0f}",
+                        help=(
+                            "Gross revenue minus electricity cost for all ASICs on "
+                            "site, after applying your uptime assumption. This is the "
+                            "net income the site generates per day before tax and "
+                            "other overheads."
+                        ),
+                    )
+                with f2:
+                    st.metric(
+                        "Gross revenue / day",
+                        f"£{site_metrics.site_revenue_gbp_per_day:,.0f}",
+                        help=(
+                            "Expected revenue for one ASIC (based on BTC price, "
+                            "difficulty, and block reward), multiplied by the number "
+                            "of ASICs running, adjusted for uptime, and converted from "
+                            "USD to GBP using the FX rate in the sidebar."
+                        ),
+                    )
+                with f3:
+                    st.metric(
+                        "Electricity cost / day",
+                        f"£{site_metrics.site_power_cost_gbp_per_day:,.0f}",
+                        help=(
+                            "Estimated electricity spend per day for running all "
+                            "ASICs, including cooling/overhead power. Based on site "
+                            "kWh usage, your electricity tariff (£/kWh), and uptime."
+                        ),
+                    )
+
+                # Row 2 — Utilisation & physics
+                u1, u2, u3 = st.columns(3)
+                with u1:
+                    st.metric(
+                        "Site power utilisation (%)",
+                        f"{power_used_pct:.1f} %",
+                        help=(
+                            "How much of your available site power is currently being "
+                            "used by ASICs (including cooling/overhead). Calculated as "
+                            "used kW ÷ available kW."
+                        ),
+                    )
+                with u2:
+                    st.metric(
+                        "Power used (kW)",
+                        f"{site_metrics.site_power_used_kw:.1f} kW",
+                        help=(
+                            "Total electrical load drawn by all ASICs, including "
+                            "cooling and overhead. This is the kW actually "
+                            "committed to mining when the site is fully running."
+                        ),
+                    )
+                with u3:
+                    st.metric(
+                        "Power per ASIC (incl. overhead)",
+                        f"{site_metrics.power_per_asic_kw:.2f} kW",
+                        help=(
+                            "Effective kW per ASIC including cooling/overhead. "
+                            "Calculated from the miner nameplate power plus the "
+                            "cooling/overhead percentage set in the inputs."
+                        ),
+                    )
+
+                # Row 3 — Efficiency & scale
+                e1, e2, e3 = st.columns(3)
+                with e1:
+                    st.metric(
+                        "Net income / kWh",
+                        f"£{site_metrics.net_revenue_per_kwh_gbp:,.3f}",
+                        help=(
+                            "Net income divided by the kWh of energy actually used per "
+                            "day. Shows the economic value (£/kWh) of routing your "
+                            "energy into Bitcoin mining instead of alternative uses."
+                        ),
+                    )
+                with e2:
+                    st.metric(
+                        "ASICs supported",
+                        f"{site_metrics.asics_supported}",
+                        help=(
+                            "Maximum number of ASICs the site can support with the "
+                            "available power, after accounting for cooling/overhead. "
+                            "Calculated as site power capacity ÷ power per ASIC."
+                        ),
+                    )
+                with e3:
+                    st.metric(
+                        "BTC mined / day",
+                        f"{site_metrics.site_btc_per_day:.5f} BTC",
+                        help=(
+                            "Total BTC expected per day from all ASICs at the "
+                            "configured uptime, using the current network difficulty "
+                            "and block subsidy."
+                        ),
+                    )
+
+                st.caption(
+                    f"Approx. {site_metrics.spare_capacity_kw:.1f} kW spare capacity "
+                    "remains for future expansion or overheads."
+                )
 
             with st.expander("Miner details...", expanded=False):
                 supplier = selected_miner.supplier or "—"
@@ -510,84 +650,516 @@ def render_dashboard() -> None:
                         label="Hashrate",
                         value=f"{selected_miner.hashrate_th:.0f} TH/s",
                     )
-                with c3:
-                    st.metric(
-                        label="Power draw",
-                        value=f"{selected_miner.power_w} W",
-                    )
+                    with c3:
+                        st.metric(
+                            label="Power draw",
+                            value=f"{selected_miner.power_w} W",
+                        )
 
                 selected_miner = render_miner_picker(
                     label="Alternative ASIC miners (by efficiency)",
                 )
 
-        st.markdown("---")
-        st.markdown("## 3. Your financial forecasts")
+                # Breakeven & payback charts for available miners
+                with st.expander("Breakeven & payback (all miners)...", expanded=False):
+                    miners = list(load_miner_options())
+                    breakeven_df = _build_breakeven_df(
+                        miners=miners,
+                        network_data=network_data,
+                        uptime_pct=site_inputs.uptime_pct,
+                    )
+                    breakeven_df = breakeven_df.dropna(
+                        subset=["breakeven_price_gbp_per_kwh"]
+                    )
 
-        st.markdown(
-            "These forecasts show how your selected revenue share applies across the "
-            "base, best, and worst scenarios using your inputs."
-        )
+                    if not breakeven_df.empty:
+                        rule_df = pd.DataFrame(
+                            {
+                                "breakeven_price_gbp_per_kwh": [
+                                    site_inputs.electricity_cost
+                                ]
+                            }
+                        )
+                        breakeven_chart = (
+                            alt.Chart(breakeven_df)
+                            .mark_point(filled=True, size=80)
+                            .encode(
+                                x=alt.X(
+                                    "breakeven_price_gbp_per_kwh:Q",
+                                    title="Breakeven power price (£/kWh)",
+                                ),
+                                y=alt.Y(
+                                    "efficiency_j_per_th:Q",
+                                    title="Efficiency (J/TH)",
+                                ),
+                                color=alt.Color(
+                                    "miner:N", legend=alt.Legend(title="Miner")
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("miner:N", title="Miner"),
+                                    alt.Tooltip(
+                                        "breakeven_price_gbp_per_kwh:Q",
+                                        title="Breakeven (£/kWh)",
+                                        format=".4f",
+                                    ),
+                                    alt.Tooltip(
+                                        "efficiency_j_per_th:Q",
+                                        title="Efficiency (J/TH)",
+                                        format=".1f",
+                                    ),
+                                ],
+                            )
+                            .properties(
+                                title="Breakeven power price per miner", height=320
+                            )
+                        )
+                        breakeven_rule = (
+                            alt.Chart(rule_df)
+                            .mark_rule(color="red", strokeDash=[4, 4])
+                            .encode(
+                                x="breakeven_price_gbp_per_kwh:Q",
+                                tooltip=[
+                                    alt.Tooltip(
+                                        "breakeven_price_gbp_per_kwh:Q",
+                                        title="Current power price (£/kWh)",
+                                        format=".3f",
+                                    )
+                                ],
+                            )
+                        )
+                        breakeven_chart = breakeven_chart + breakeven_rule
+                        st.altair_chart(breakeven_chart, width="stretch")
 
-        default_share_pct = int(settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100)
-        client_share_pct = (
-            st.session_state.get("overview_client_share_pct")
-            or st.session_state.get("scenario_client_share_pct")
-            or st.session_state.get("pdf_scenarios", {}).get("client_share_pct")
-            or default_share_pct
-        )
+                        # Tabular view
+                        with st.expander("Miner breakeven table...", expanded=False):
+                            # Join in capex (£) and p/kWh display
+                            price_map = {
+                                m.name: (m.price_usd or 0.0) * network_data.usd_to_gbp
+                                for m in miners
+                            }
+                            table_df = breakeven_df.copy()
+                            table_df["capex_gbp"] = table_df["miner"].map(price_map)
+                            table_df["breakeven_price_p_per_kwh"] = (
+                                table_df["breakeven_price_gbp_per_kwh"] * 100
+                            )
+                            table_df = table_df.sort_values(
+                                by="breakeven_price_p_per_kwh", ascending=False
+                            )
+                            table_df = table_df.rename(
+                                columns={
+                                    "miner": "Miner",
+                                    "efficiency_j_per_th": "Efficiency (J/TH)",
+                                    "capex_gbp": "Capex (£)",
+                                    "breakeven_price_p_per_kwh": (
+                                        "Breakeven price (p/kWh)"
+                                    ),
+                                }
+                            )
+                            display_cols = [
+                                "Miner",
+                                "Breakeven price (p/kWh)",
+                                "Efficiency (J/TH)",
+                                "Capex (£)",
+                            ]
+                            table_df = table_df[display_cols].reset_index(drop=True)
+                            st.dataframe(
+                                table_df.style.format(
+                                    {
+                                        "Efficiency (J/TH)": "{:.1f}",
+                                        "Capex (£)": "£{:,.0f}",
+                                        "Breakeven price (p/kWh)": "{:.2f}",
+                                    },
+                                    na_rep="—",
+                                ),
+                                width="stretch",
+                                hide_index=True,
+                            )
+                    else:
+                        st.info("No breakeven data available for current inputs.")
 
-        scenario_results = _build_scenario_results_snapshot(
-            site_metrics=site_metrics,
-            usd_to_gbp=network_data.usd_to_gbp,
-            client_share_pct=client_share_pct,
-        )
+                    payback_df = _build_payback_df(
+                        miners=miners,
+                        network_data=network_data,
+                        uptime_pct=site_inputs.uptime_pct,
+                        extra_power_price=site_inputs.electricity_cost,
+                    )
+                    payback_df = payback_df.dropna(subset=["payback_days"])
+                    if not payback_df.empty:
+                        payback_cap_days = 5000  # cap for chart readability
+                        breakeven_map_for_payback = {
+                            row["miner"]: row["breakeven_price_gbp_per_kwh"]
+                            for _, row in breakeven_df.iterrows()
+                        }
+                        clipped_payback_df = payback_df.copy()
+                        clipped_payback_df["breakeven_price_gbp_per_kwh"] = (
+                            clipped_payback_df["miner"].map(breakeven_map_for_payback)
+                        )
+                        clipped_payback_df = clipped_payback_df[
+                            clipped_payback_df["breakeven_price_gbp_per_kwh"].notna()
+                        ]
+                        clipped_payback_df = clipped_payback_df[
+                            clipped_payback_df["power_price_gbp_per_kwh"]
+                            <= clipped_payback_df["breakeven_price_gbp_per_kwh"]
+                        ]
+                        clipped_payback_df = clipped_payback_df[
+                            clipped_payback_df["payback_days"] <= payback_cap_days
+                        ]
 
-        if scenario_results:
-            base_result, best_result, worst_result = scenario_results
+                        rule_df = pd.DataFrame(
+                            {"power_price_gbp_per_kwh": [site_inputs.electricity_cost]}
+                        )
+                        payback_chart = (
+                            alt.Chart(clipped_payback_df)
+                            .mark_line()
+                            .encode(
+                                x=alt.X(
+                                    "power_price_gbp_per_kwh:Q",
+                                    title="Power price (£/kWh)",
+                                ),
+                                y=alt.Y(
+                                    "payback_days:Q",
+                                    title="Simple payback (days)",
+                                ),
+                                color=alt.Color(
+                                    "miner:N", legend=alt.Legend(title="Miner")
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("miner:N", title="Miner"),
+                                    alt.Tooltip(
+                                        "power_price_gbp_per_kwh:Q",
+                                        title="Power price (£/kWh)",
+                                        format=".3f",
+                                    ),
+                                    alt.Tooltip(
+                                        "payback_days:Q",
+                                        title="Payback (days)",
+                                        format=".0f",
+                                    ),
+                                ],
+                            )
+                            .properties(
+                                title="Payback period vs power price", height=360
+                            )
+                        )
+                        payback_rule = (
+                            alt.Chart(rule_df)
+                            .mark_rule(color="red", strokeDash=[4, 4])
+                            .encode(
+                                x="power_price_gbp_per_kwh:Q",
+                                tooltip=[
+                                    alt.Tooltip(
+                                        "power_price_gbp_per_kwh:Q",
+                                        title="Current power price (£/kWh)",
+                                        format=".3f",
+                                    )
+                                ],
+                            )
+                        )
+                        payback_chart = payback_chart + payback_rule
+                        st.altair_chart(payback_chart, width="stretch")
 
-            _render_scenario_comparison(
-                base_result=base_result,
-                best_result=best_result,
-                worst_result=worst_result,
-                heading="Scenario comparison table",
+                        # Discrete payback table
+                        with st.expander("Payback (discrete) table...", expanded=False):
+                            # Offer a set of power prices (in pence) for the table
+                            available_prices = sorted(
+                                {
+                                    round(p * 100, 1)
+                                    for p in payback_df[
+                                        "power_price_gbp_per_kwh"
+                                    ].unique()
+                                }
+                            )
+                            default_prices = [
+                                p for p in available_prices if 3.0 <= p <= 7.0
+                            ] or available_prices[:5]
+                            selected_pence = st.multiselect(
+                                "Pick a set of power prices you charted (pence/kWh):",
+                                options=available_prices,
+                                default=default_prices,
+                                help=(
+                                    "These correspond to the power price axis on the "
+                                    "payback chart."
+                                ),
+                            )
+
+                            if selected_pence:
+                                sel_prices_gbp = [p / 100 for p in selected_pence]
+                                df_subset = payback_df[
+                                    payback_df["power_price_gbp_per_kwh"].isin(
+                                        sel_prices_gbp
+                                    )
+                                ].copy()
+                                df_subset["price_label"] = (
+                                    df_subset["power_price_gbp_per_kwh"] * 100
+                                ).round(1).astype(str) + "p"
+
+                                pivot = df_subset.pivot_table(
+                                    index="miner",
+                                    columns="price_label",
+                                    values="payback_days",
+                                    aggfunc="first",
+                                )
+                                pivot = pivot.reindex(index=[m.name for m in miners])
+
+                                # Reorder columns based on selected_pence order
+                                col_order = [(p, f"{p:.1f}p") for p in selected_pence]
+                                pivot = pivot[
+                                    [
+                                        label
+                                        for _, label in col_order
+                                        if label in pivot.columns
+                                    ]
+                                ]
+
+                                pivot = pivot.reset_index().rename(
+                                    columns={"miner": "Miner"}
+                                )
+
+                                st.dataframe(
+                                    pivot.style.format(
+                                        {col: "{:.0f}" for col in pivot.columns[1:]},
+                                        na_rep="—",
+                                    ),
+                                    width="stretch",
+                                    hide_index=True,
+                                )
+                            else:
+                                st.info(
+                                    "Select one or more power prices to populate the "
+                                    "table."
+                                )
+
+                        # Unified viability/payback chart + summary table
+                        breakeven_map = {
+                            row["miner"]: row["breakeven_price_gbp_per_kwh"]
+                            for _, row in breakeven_df.iterrows()
+                        }
+                        site_price = site_inputs.electricity_cost
+
+                        payback_lines_df = payback_df.copy()
+                        payback_lines_df["breakeven_price_gbp_per_kwh"] = (
+                            payback_lines_df["miner"].map(breakeven_map)
+                        )
+                        payback_lines_df = payback_lines_df[
+                            payback_lines_df["breakeven_price_gbp_per_kwh"].notna()
+                        ]
+                        payback_lines_df = payback_lines_df[
+                            payback_lines_df["power_price_gbp_per_kwh"]
+                            <= payback_lines_df["breakeven_price_gbp_per_kwh"]
+                        ]
+                        payback_lines_df = payback_lines_df[
+                            payback_lines_df["payback_days"] <= payback_cap_days
+                        ]
+                        payback_lines_df["viable"] = (
+                            payback_lines_df["breakeven_price_gbp_per_kwh"]
+                            >= site_price
+                        )
+
+                        viability_chart = alt.layer(
+                            alt.Chart(payback_lines_df)
+                            .mark_line()
+                            .encode(
+                                x=alt.X(
+                                    "power_price_gbp_per_kwh:Q",
+                                    title="Power price (£/kWh)",
+                                ),
+                                y=alt.Y(
+                                    "payback_days:Q",
+                                    title="Simple payback (days)",
+                                ),
+                                color=alt.Color(
+                                    "miner:N", legend=alt.Legend(title="Miner")
+                                ),
+                                opacity=alt.condition(
+                                    alt.datum.viable,
+                                    alt.value(1.0),
+                                    alt.value(0.4),
+                                ),
+                                strokeDash=alt.condition(
+                                    alt.datum.viable,
+                                    alt.value([1, 0]),
+                                    alt.value([4, 3]),
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("miner:N", title="Miner"),
+                                    alt.Tooltip(
+                                        "power_price_gbp_per_kwh:Q",
+                                        title="Power price (£/kWh)",
+                                        format=".3f",
+                                    ),
+                                    alt.Tooltip(
+                                        "payback_days:Q",
+                                        title="Payback (days)",
+                                        format=".0f",
+                                    ),
+                                ],
+                            ),
+                            alt.Chart(breakeven_df)
+                            .mark_point(filled=True, size=80)
+                            .encode(
+                                x="breakeven_price_gbp_per_kwh:Q",
+                                y=alt.value(0),
+                                color=alt.Color(
+                                    "miner:N", legend=alt.Legend(title="Miner")
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("miner:N", title="Miner"),
+                                    alt.Tooltip(
+                                        "breakeven_price_gbp_per_kwh:Q",
+                                        title="Breakeven (£/kWh)",
+                                        format=".4f",
+                                    ),
+                                ],
+                            ),
+                            alt.Chart(rule_df)
+                            .mark_rule(color="red", strokeDash=[4, 4])
+                            .encode(
+                                x="power_price_gbp_per_kwh:Q",
+                                tooltip=[
+                                    alt.Tooltip(
+                                        "power_price_gbp_per_kwh:Q",
+                                        title="Site price (£/kWh)",
+                                        format=".3f",
+                                    )
+                                ],
+                            ),
+                        ).properties(
+                            title="Unified payback and breakeven view",
+                            height=380,
+                        )
+                        st.altair_chart(viability_chart, width="stretch")
+
+                        # Summary table: viability + breakeven + payback at site price
+                        site_payback = []
+                        for miner in miners:
+                            breakeven_price = breakeven_map.get(miner.name)
+                            viable = (
+                                breakeven_price is not None
+                                and site_price is not None
+                                and breakeven_price >= site_price
+                            )
+                            # Payback at site price if viable and present in df
+                            payback_at_site = None
+                            if (
+                                breakeven_price is not None
+                                and site_price is not None
+                                and site_price > 0
+                            ):
+                                match = payback_df[
+                                    (payback_df["miner"] == miner.name)
+                                    & (
+                                        payback_df["power_price_gbp_per_kwh"]
+                                        == site_price
+                                    )
+                                ]
+                                if not match.empty:
+                                    payback_at_site = match.iloc[0]["payback_days"]
+                            site_payback.append(
+                                {
+                                    "Miner": miner.name,
+                                    "Viable at site": "Yes" if viable else "No",
+                                    "Breakeven price (p/kWh)": (
+                                        breakeven_price * 100
+                                        if breakeven_price is not None
+                                        else None
+                                    ),
+                                    "Payback at site price (days)": payback_at_site,
+                                }
+                            )
+                        summary_df = pd.DataFrame(site_payback)
+                        if not summary_df.empty:
+                            summary_df = summary_df.sort_values(
+                                by=["Viable at site", "Breakeven price (p/kWh)"],
+                                ascending=[False, False],
+                            )
+                            with st.expander(
+                                "Unified payback and breakeven details...",
+                                expanded=False,
+                            ):
+                                st.dataframe(
+                                    summary_df.style.format(
+                                        {
+                                            "Breakeven price (p/kWh)": "{:.2f}",
+                                            "Payback at site price (days)": "{:.0f}",
+                                        },
+                                        na_rep="—",
+                                    ),
+                                    width="stretch",
+                                    hide_index=True,
+                                )
+                    else:
+                        st.info("No payback data available for current inputs.")
+
+            st.markdown("---")
+            st.markdown("## 3. Your financial forecasts")
+
+            st.markdown(
+                "These forecasts show how your selected revenue share applies across "
+                "the base, best, and worst scenarios using your inputs."
             )
 
-            with st.expander("Scenario details...", expanded=False):
-                client_share_pct = st.slider(
-                    "Your share of BTC revenue (%)",
-                    min_value=0,
-                    max_value=100,
-                    value=int(client_share_pct),
-                    step=1,
-                    key="overview_client_share_pct",
-                )
-                st.session_state["scenario_client_share_pct"] = client_share_pct
+            default_share_pct = int(
+                settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100
+            )
+            client_share_pct = (
+                st.session_state.get("overview_client_share_pct")
+                or st.session_state.get("scenario_client_share_pct")
+                or st.session_state.get("pdf_scenarios", {}).get("client_share_pct")
+                or default_share_pct
+            )
 
-                updated_results = _build_scenario_results_snapshot(
-                    site_metrics=site_metrics,
-                    usd_to_gbp=network_data.usd_to_gbp,
-                    client_share_pct=client_share_pct,
-                )
-                if updated_results:
-                    base_result, best_result, worst_result = updated_results
+            scenario_results = _build_scenario_results_snapshot(
+                site_metrics=site_metrics,
+                usd_to_gbp=network_data.usd_to_gbp,
+                client_share_pct=client_share_pct,
+            )
 
-                with st.expander("Base case...", expanded=True):
-                    render_scenario_panel(
-                        base_result,
-                        capex_breakdown=capex_breakdown,
+            if scenario_results:
+                base_result, best_result, worst_result = scenario_results
+
+                _render_scenario_comparison(
+                    base_result=base_result,
+                    best_result=best_result,
+                    worst_result=worst_result,
+                    heading="Scenario comparison table",
+                )
+
+                with st.expander("Scenario details...", expanded=False):
+                    client_share_pct = st.slider(
+                        "Your share of BTC revenue (%)",
+                        min_value=0,
+                        max_value=100,
+                        value=int(client_share_pct),
+                        step=1,
+                        key="overview_client_share_pct",
                     )
-                with st.expander("Best case...", expanded=False):
-                    render_scenario_panel(
-                        best_result,
-                        capex_breakdown=capex_breakdown,
+                    st.session_state["scenario_client_share_pct"] = client_share_pct
+
+                    updated_results = _build_scenario_results_snapshot(
+                        site_metrics=site_metrics,
+                        usd_to_gbp=network_data.usd_to_gbp,
+                        client_share_pct=client_share_pct,
                     )
-                with st.expander("Worst case...", expanded=False):
-                    render_scenario_panel(
-                        worst_result,
-                        capex_breakdown=capex_breakdown,
-                    )
-        else:
-            st.info("Project-level scenarios are unavailable until inputs are set.")
+                    if updated_results:
+                        base_result, best_result, worst_result = updated_results
+
+                    with st.expander("Base case...", expanded=True):
+                        render_scenario_panel(
+                            base_result,
+                            capex_breakdown=capex_breakdown,
+                        )
+                    with st.expander("Best case...", expanded=False):
+                        render_scenario_panel(
+                            best_result,
+                            capex_breakdown=capex_breakdown,
+                        )
+                    with st.expander("Worst case...", expanded=False):
+                        render_scenario_panel(
+                            worst_result,
+                            capex_breakdown=capex_breakdown,
+                        )
+            else:
+                st.info("Project-level scenarios are unavailable until inputs are set.")
 
         st.markdown("---")
 
@@ -595,14 +1167,17 @@ def render_dashboard() -> None:
     # SCENARIOS TAB
     # ---------------------------------------------------------
     with tab_scenarios:
-        # Pass the derived SiteMetrics into the scenarios view so it can
-        # build real project-level economics. Extra kwargs are ignored.
-        render_scenarios_and_risk(
-            site=site_metrics,
-            miner=selected_miner,
-            network_data=network_data,
-            usd_to_gbp=network_data.usd_to_gbp,
-        )
+        if selected_miner is None:
+            st.info("Provide site inputs and select a miner to view scenarios.")
+        else:
+            # Pass the derived SiteMetrics into the scenarios view so it can
+            # build real project-level economics. Extra kwargs are ignored.
+            render_scenarios_and_risk(
+                site=site_metrics,
+                miner=selected_miner,
+                network_data=network_data,
+                usd_to_gbp=network_data.usd_to_gbp,
+            )
 
     # ---------------------------------------------------------
     # ASSUMPTIONS TAB

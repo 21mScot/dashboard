@@ -5,10 +5,12 @@
 MEMPOOL_BLOCKTIP_URL = "https://mempool.space/api/v1/blocks/tip-height"
 BLOCKCHAIN_DIFFICULTY_URL = "https://blockchain.info/q/getdifficulty"
 COINGECKO_SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
+HASHRATEINDEX_HASHPRICE_URL = "https://api.hashrateindex.com/api/v1/public/hashprice"
 
 # Requests / caching config
 LIVE_DATA_REQUEST_TIMEOUT_S = 10
 LIVE_DATA_CACHE_TTL_S = 60 * 60 * 24  # 24h during dev
+# LIVE_DATA_CACHE_TTL_S = 10 * 60         # 10 minutes during production
 
 # Optional: identify yourself nicely to public APIs
 LIVE_DATA_USER_AGENT = "21mScotDashboard/0.1 (contact: you@example.com)"

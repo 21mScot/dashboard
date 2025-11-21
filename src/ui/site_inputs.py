@@ -56,9 +56,9 @@ def render_site_inputs() -> SiteInputs:
     with col_power:
         site_power_kw = st.number_input(
             "Available site power (kW)",
-            min_value=1,
+            min_value=0,
             max_value=5000,
-            value=100,
+            value=0,
             step=1,
             format="%d",
             help="Total electrical capacity available for miners.",
@@ -69,7 +69,7 @@ def render_site_inputs() -> SiteInputs:
             "Cost of generation (£ per kWh)",
             min_value=0.0,
             max_value=1.000,
-            value=0.045,
+            value=0.0,
             step=0.001,
             format="%.3f",
             help="Your electricity tariff, including any standing charges.",
@@ -77,9 +77,9 @@ def render_site_inputs() -> SiteInputs:
 
     uptime_pct = st.slider(
         "Expected uptime (%)",
-        min_value=80,
+        min_value=0,
         max_value=100,
-        value=98,
+        value=0,
         help="Percentage of time the site is expected to remain online.",
     )
     # Cooling overhead hidden from UI but retained for calculations
