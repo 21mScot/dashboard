@@ -389,11 +389,11 @@ def render_scenario_panel(
     _render_yearly_chart(df)
 
     # Renamed: "Annual economic breakdown"
-    with st.expander("Annual economic breakdown", expanded=False):
+    with st.expander("Annual economic breakdown...", expanded=False):
         _render_yearly_table(df)
 
     # NOTE: removed extra horizontal rule between the two expanders
 
     # Renamed: "CapEx breakdown"
-    with st.expander("CapEx breakdown", expanded=False):
+    with st.expander("CapEx breakdown...", expanded=False):
         _render_capex_breakdown(result, capex_breakdown)

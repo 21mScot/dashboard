@@ -28,7 +28,7 @@ def _build_scenario_label(
         f"{friendly_name} · "
         f"{n_years} year{'s' if n_years != 1 else ''} · "
         f"{total_btc:,.3f} BTC · "
-        f"£{total_revenue:,.0f} revenue"
+        f"£{total_revenue:,.0f} revenue..."
     )
 
 
