@@ -3,6 +3,10 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Tuple
 
+import pandas as pd
+
+from src.core.btc_forecast_engine import forecast_to_dataframe
+
 
 def build_halving_dates(
     next_halving: Tuple[int, int, int] | None,
@@ -31,6 +35,16 @@ def build_halving_dates(
     return halving_points
 
 
+def compute_y_domain(series: pd.Series, pad_pct: float) -> Tuple[float, float]:
+    """
+    Compute a simple (0, max*(1+pad)) y-domain for charting.
+    """
+    pad = max(0.0, pad_pct or 0.0)
+    max_val = series.max() if not series.empty else 0.0
+    upper = float(max_val * (1 + pad)) if max_val > 0 else 1.0
+    return (0.0, upper)
+
+
 def build_unified_monthly_table(monthly_df, fiat_df, usd_to_gbp: float):
     """
     Merge BTC and fiat monthly data and compute BTC price in GBP.
@@ -48,3 +62,67 @@ def build_unified_monthly_table(monthly_df, fiat_df, usd_to_gbp: float):
     if "BTC price (USD)" in unified_df.columns:
         unified_df["BTC price (GBP)"] = unified_df["BTC price (USD)"] * usd_to_gbp
     return unified_df[["Month", "BTC mined", "Revenue (GBP)", "BTC price (GBP)"]]
+
+
+def prepare_btc_display(
+    monthly_rows,
+    pad_pct: float,
+    next_halving: Tuple[int, int, int] | None,
+    interval_years: int,
+):
+    """
+    From raw monthly rows, build a DataFrame with Month parsed, y-domain,
+    and halving dates.
+    """
+    monthly_df = forecast_to_dataframe(monthly_rows)
+    if monthly_df.empty:
+        return monthly_df, (0.0, 1.0), []
+    monthly_df["Month"] = pd.to_datetime(monthly_df["Month"])
+    y_domain = compute_y_domain(monthly_df["BTC mined"], pad_pct)
+    halving_dates = build_halving_dates(
+        next_halving, interval_years, monthly_df["Month"].max().date()
+    )
+    return monthly_df, y_domain, halving_dates
+
+
+def prepare_fiat_display(
+    fiat_rows,
+    pad_pct: float,
+    next_halving: Tuple[int, int, int] | None,
+    interval_years: int,
+):
+    """
+    From raw fiat rows, build a DataFrame with Month parsed, y-domain,
+    and halving dates.
+    """
+    fiat_df = pd.DataFrame(fiat_rows)
+    if fiat_df.empty:
+        return fiat_df, (0.0, 1.0), []
+
+    # Normalize column names if coming from dataclasses (lowercase field names)
+    if "Month" not in fiat_df.columns and "month" in fiat_df.columns:
+        fiat_df["Month"] = fiat_df["month"]
+    if "Revenue (GBP)" not in fiat_df.columns and "revenue_gbp" in fiat_df.columns:
+        fiat_df["Revenue (GBP)"] = fiat_df["revenue_gbp"]
+    if "BTC price (USD)" not in fiat_df.columns and "btc_price_usd" in fiat_df.columns:
+        fiat_df["BTC price (USD)"] = fiat_df["btc_price_usd"]
+    if "BTC mined" not in fiat_df.columns and "btc_mined" in fiat_df.columns:
+        fiat_df["BTC mined"] = fiat_df["btc_mined"]
+
+    # Ensure required columns exist
+    if "Month" not in fiat_df.columns:
+        fiat_df["Month"] = pd.NaT
+    if "Revenue (GBP)" not in fiat_df.columns:
+        fiat_df["Revenue (GBP)"] = 0.0
+
+    if not pd.api.types.is_datetime64_any_dtype(fiat_df["Month"]):
+        fiat_df["Month"] = pd.to_datetime(fiat_df["Month"])
+    # Drop rows where Month is NaT to avoid comparison issues
+    fiat_df = fiat_df.dropna(subset=["Month"])
+    if fiat_df.empty:
+        return fiat_df, (0.0, 1.0), []
+    y_domain = compute_y_domain(fiat_df["Revenue (GBP)"], pad_pct)
+    halving_dates = build_halving_dates(
+        next_halving, interval_years, fiat_df["Month"].max().date()
+    )
+    return fiat_df, y_domain, halving_dates
