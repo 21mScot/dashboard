@@ -136,9 +136,9 @@ def forecast_to_dataframe(rows: List[MonthlyForecastRow]) -> pd.DataFrame:
             {
                 "Month": r.month,
                 "BTC mined": r.btc_mined,
-                "Total reward (BTC/block)": r.total_reward_btc_per_block,
-                "Subsidy (BTC/block)": r.subsidy_btc,
-                "Fee (BTC/block)": r.fee_btc_per_block,
+                "Block reward": r.total_reward_btc_per_block,
+                "Block subsidy": r.subsidy_btc,
+                "Block Tx Fees (BTC)": r.fee_btc_per_block,
             }
             for r in rows
         ]

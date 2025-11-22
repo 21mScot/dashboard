@@ -1213,11 +1213,9 @@ def _render_btc_monthly_forecast(
                 tooltip=[
                     alt.Tooltip("Month:T", title="Month"),
                     alt.Tooltip("BTC mined:Q", title="BTC mined", format=".5f"),
-                    alt.Tooltip("Subsidy (BTC/block):Q", title="Subsidy", format=".4f"),
-                    alt.Tooltip("Fee (BTC/block):Q", title="Fee", format=".6f"),
-                    alt.Tooltip(
-                        "Total reward (BTC/block):Q", title="Reward", format=".6f"
-                    ),
+                    alt.Tooltip("Block subsidy:Q", title="Subsidy", format=".4f"),
+                    alt.Tooltip("Block Tx Fees (BTC):Q", title="Fee", format=".6f"),
+                    alt.Tooltip("Block reward:Q", title="Reward", format=".6f"),
                 ],
             )
         )
@@ -1255,6 +1253,7 @@ def _render_btc_monthly_forecast(
             .properties(title="BTC forecast (monthly)", height=320)
         )
         st.altair_chart(chart, width="stretch")
+        st.caption("Vertical dashed lines mark estimated halving dates.")
 
         with st.expander("BTC forecast (monthly) diagnostics...", expanded=False):
             annual_df = annual_totals(monthly_rows)
@@ -1293,9 +1292,9 @@ so you can align the model with your own view.
                 {
                     "Month": _format_month,
                     "BTC mined": "{:.5f}",
-                    "Total reward (BTC/block)": "{:.6f}",
-                    "Subsidy (BTC/block)": "{:.4f}",
-                    "Fee (BTC/block)": "{:.6f}",
+                    "Block reward": "{:.6f}",
+                    "Block subsidy": "{:.4f}",
+                    "Block Tx Fees (BTC)": "{:.6f}",
                 }
             ),
             width="stretch",
