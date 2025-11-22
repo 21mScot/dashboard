@@ -1,5 +1,10 @@
 # src/config/settings.py
 
+# Development / production settings for Bitcoin mining economics dashboard
+DEV_DEFAULT_SITE_POWER_KW = 1000
+DEV_DEFAULT_POWER_PRICE_GBP_PER_KWH = 0.045
+DEV_DEFAULT_UPTIME_PCT = 98
+
 # --- Live data / network constants ---
 
 MEMPOOL_BLOCKTIP_URL = "https://mempool.space/api/v1/blocks/tip-height"
@@ -51,8 +56,30 @@ SCENARIO_WORST_ELECTRICITY_PCT = 0.20
 # Fallback project duration (years)
 SCENARIO_FALLBACK_PROJECT_YEARS = 4
 
+# Projected network dynamics (base case)
+DEFAULT_ANNUAL_DIFFICULTY_GROWTH_PCT = 0.0
+HALVING_INTERVAL_YEARS = 4
+# Stored as tuple to avoid datetime import in settings
+NEXT_HALVING_DATE = (2028, 4, 1)  # YYYY, M, D
+
+# Block fees (base) for forward projections
+DEFAULT_FEE_BTC_PER_BLOCK = 0.0005
+
+# UI defaults for forecast sliders (expressed as %)
+DEFAULT_HASHRATE_GROWTH_PCT = 5
+DEFAULT_FEE_GROWTH_PCT = 10
+DEFAULT_BTC_PRICE_GROWTH_PCT = 20
+DATE_DISPLAY_FMT = "%d/%m/%Y"
+BITCOIN_ORANGE_HEX = "#F7931A"
+FIAT_NEUTRAL_BLUE_HEX = "#1f77b4"
+LINE_STYLE_ACTUAL = []  # actual/observed series
+LINE_STYLE_FORECAST = [6, 3]  # dashed/broken for projections
+
 # UI defaults
 PROJECT_GO_LIVE_INCREMENT_WEEKS = 4
+DEV_DEFAULT_SITE_POWER_KW = 1000
+DEV_DEFAULT_POWER_PRICE_GBP_PER_KWH = 0.045
+DEV_DEFAULT_UPTIME_PCT = 98
 
 # Streamlit metric styling (default theme)
 METRIC_FONT_FAMILY = "Source Sans Pro, sans-serif"
@@ -102,3 +129,12 @@ SCENARIO_REVENUE_LINE_COLOR = "#1f77b4"
 SCENARIO_EBITDA_LINE_COLOR = "#2ca02c"
 SCENARIO_EBITDA_LINE_DASH = [4, 2]
 SCENARIO_BTC_BAR_MAX_FRACTION = 0.6
+
+# Histogram defaults (shared)
+# Controls how tall the tallest histogram bar appears relative to its axis.
+HISTOGRAM_HEIGHT_RATIO = 0.6  # e.g. 0.8 = top bar reaches 80% of right axis
+
+# Controls the bar colour for the histogram (any Plotly-compatible colour string).
+HISTOGRAM_COLOR = "rgba(128,128,128,0.5)"  # semi-transparent light grey
+HISTOGRAM_Y_PAD_PCT = 0.30  # y-axis extends 30% above max by default
+LINE_Y_PAD_PCT = 0.30  # y-axis pad for line charts

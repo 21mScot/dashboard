@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from datetime import date
 from typing import List, Optional
 
 import pandas as pd
@@ -279,6 +280,7 @@ def _render_scenario_comparison(
 def render_scenarios_page(
     site: Optional[object] = None,
     usd_to_gbp: float | None = None,
+    go_live_date: date | None = None,
 ) -> None:
     """
     Top-level renderer for the '3. Scenarios & risks' tab.
@@ -287,6 +289,9 @@ def render_scenarios_page(
     # Ensure we always have an FX rate
     if usd_to_gbp is None:
         usd_to_gbp = settings.DEFAULT_USD_TO_GBP
+
+    if go_live_date is None:
+        go_live_date = st.session_state.get("project_go_live_date")
 
     # Main tab heading
     st.header("3. Scenarios & risks")
@@ -324,6 +329,7 @@ def render_scenarios_page(
         base_years = build_base_annual_from_site_metrics(
             site=site,
             project_years=project_years,
+            go_live_date=go_live_date,
         )
     else:
         base_years = _build_dummy_base_years(
@@ -426,4 +432,7 @@ def render_scenarios_and_risk(
     Backwards-compatible wrapper so that existing code that imports
     `render_scenarios_and_risk` continues to work.
     """
-    render_scenarios_page(site=site, usd_to_gbp=usd_to_gbp)
+    go_live_date = kwargs.get("go_live_date") or st.session_state.get(
+        "project_go_live_date"
+    )
+    render_scenarios_page(site=site, usd_to_gbp=usd_to_gbp, go_live_date=go_live_date)

@@ -163,6 +163,34 @@ def get_assumptions_sections() -> list[AssumptionSection]:
                 "miner-specific efficiency curves, difficulty-projection curves, and "
                 "halving-aware long-term forecasts.",
             ],
+            bullets=[
+                BulletItem(
+                    text="Charting conventions (axes and orientation)",
+                    subitems=[
+                        "Dual y-axis labels follow international convention: left axis "
+                        "label rotated −90° (bottom-to-top), right axis rotated +90° "
+                        "(top-to-bottom) per common scientific/standards guidance "
+                        "(IEEE/ISO/APA).",
+                        "Where dual axes are used, scales are aligned where possible "
+                        "to avoid inverted or mismatched directions.",
+                    ],
+                )
+            ],
+        ),
+        AssumptionSection(
+            title="Protocol-level effects",
+            paragraphs=[
+                "We model two protocol-level effects that are outside your control: "
+                "• Block reward (subsidy halvings + transaction fees) "
+                "• Global network hashrate growth, which we map into difficulty "
+                "adjustments to keep block time ≈ 10 minutes.",
+                "We do not explicitly model short-term block time variance or orphan "
+                "blocks, as these average out over multi-month horizons and have "
+                "negligible impact on long-term site economics.",
+                "Clear disclaimer: There is no accepted industry standard for "
+                "forecasting future hashrate or fee growth. We provide transparent, "
+                "adjustable assumptions so you can align the model with your own view.",
+            ],
         ),
     ]
 
