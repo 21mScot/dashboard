@@ -1,5 +1,7 @@
 # tests/test_miner_daily_outputs.py
 
+from datetime import datetime, timezone
+
 import pytest
 
 from src.config import settings
@@ -60,6 +62,9 @@ def static_network() -> NetworkData:
         block_subsidy_btc=settings.DEFAULT_BLOCK_SUBSIDY_BTC,
         usd_to_gbp=settings.DEFAULT_USD_TO_GBP,
         block_height=None,
+        as_of_utc=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        hashprice_usd_per_ph_day=None,
+        hashprice_as_of_utc=None,
     )
 
 
@@ -111,6 +116,10 @@ def main():
         difficulty=settings.DEFAULT_NETWORK_DIFFICULTY,
         block_subsidy_btc=settings.DEFAULT_BLOCK_SUBSIDY_BTC,
         block_height=None,
+        usd_to_gbp=settings.DEFAULT_USD_TO_GBP,
+        as_of_utc=datetime.now(timezone.utc),
+        hashprice_usd_per_ph_day=None,
+        hashprice_as_of_utc=None,
     )
 
     miners = {
