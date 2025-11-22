@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 import locale
 import textwrap
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import altair as alt
 import pandas as pd
@@ -23,6 +23,7 @@ from src.core.fiat_forecast_engine import (
     build_fiat_monthly_forecast,
     fiat_forecast_to_dataframe,
 )
+from src.core.forecast_utils import build_halving_dates
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
 from src.core.miner_analytics import (
     build_viability_summary,
@@ -1231,21 +1232,13 @@ def _render_btc_monthly_forecast(
         )
 
         halving_layer = None
-        halving_dates = []
-        halving_tuple = getattr(settings, "NEXT_HALVING_DATE", None)
-        interval_years = int(getattr(settings, "HALVING_INTERVAL_YEARS", 4))
-        if halving_tuple and len(halving_tuple) == 3:
-            next_halving = date(*halving_tuple)
-            last_month = monthly_df["Month"].max().date()
-            while next_halving <= last_month:
-                halving_dates.append({"halving": next_halving})
-                next_halving = date(
-                    next_halving.year + interval_years,
-                    next_halving.month,
-                    next_halving.day,
-                )
+        halving_dates = build_halving_dates(
+            getattr(settings, "NEXT_HALVING_DATE", None),
+            int(getattr(settings, "HALVING_INTERVAL_YEARS", 4)),
+            monthly_df["Month"].max().date(),
+        )
         if halving_dates:
-            halving_df = pd.DataFrame(halving_dates)
+            halving_df = pd.DataFrame({"halving": halving_dates})
             halving_layer = (
                 alt.Chart(halving_df)
                 .mark_rule(
@@ -1415,21 +1408,13 @@ def _render_fiat_monthly_forecast(
         )
 
         halving_layer = None
-        halving_dates = []
-        halving_tuple = getattr(settings, "NEXT_HALVING_DATE", None)
-        interval_years = int(getattr(settings, "HALVING_INTERVAL_YEARS", 4))
-        if halving_tuple and len(halving_tuple) == 3:
-            next_halving = date(*halving_tuple)
-            last_month = fiat_df["Month"].max().date()
-            while next_halving <= last_month:
-                halving_dates.append({"halving": next_halving})
-                next_halving = date(
-                    next_halving.year + interval_years,
-                    next_halving.month,
-                    next_halving.day,
-                )
+        halving_dates = build_halving_dates(
+            getattr(settings, "NEXT_HALVING_DATE", None),
+            int(getattr(settings, "HALVING_INTERVAL_YEARS", 4)),
+            fiat_df["Month"].max().date(),
+        )
         if halving_dates:
-            halving_df = pd.DataFrame(halving_dates)
+            halving_df = pd.DataFrame({"halving": halving_dates})
             halving_layer = (
                 alt.Chart(halving_df)
                 .mark_rule(
