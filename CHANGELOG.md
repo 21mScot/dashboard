@@ -3,7 +3,14 @@
 All notable changes will be documented in this file.
 
 ## [Unreleased]
-- TBC
+
+## [v0.19.0] - 2025-11-22
+### Added
+- Unified forecast helpers (halving dates, y-domain prep, unified table) and typed contexts for BTC/fiat forecasts.
+- New constants: BTC bar grey (`BTC_BAR_GREY_HEX`) and forecast line styles; BTC forecast table columns renamed to Block reward/subsidy/Tx fees.
+- Additional tests for forecast utilities and data-prep edge cases.
+### Fixed
+- Hardened fiat forecast prep when columns are missing or Month is NaT; added halving marker caption to BTC forecast chart.
 
 ## [v0.18.0] - 2025-11-21
 ### Added
@@ -38,7 +45,8 @@ All notable changes will be documented in this file.
 - `black` / `ruff` pre-commit hooks
 - Manual Streamlit UI smoke test (scenarios + miner selection)
 
-[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.19.0...HEAD
+[v0.19.0]: https://github.com/21mScot/dashboard/releases/tag/v0.19.0
 [v0.18.0]: https://github.com/21mScot/dashboard/releases/tag/v0.18.0
 [v0.17.0]: https://github.com/21mScot/dashboard/releases/tag/v0.17.0
 [v0.16.0]: https://github.com/21mScot/dashboard/releases/tag/v0.16.0
