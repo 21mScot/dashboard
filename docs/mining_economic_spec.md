@@ -281,3 +281,11 @@ Given cashflows `[CF_0, CF_1, ..., CF_T]` and discount rate `r` (e.g. 8%):
     - annual cashflows table per scenario,
     - cumulative and discounted cashflow charts,
     - investment metrics table (NPV, IRR, ROIC, payback).
+
+## 8. Alternaitve Investment metrics
+- “Other bitcoin plays”:
+  - CapEx to BTC price today and ongoing DCA with OpEx to end of project?
+  - Blockwaresolutions.com hosted mining with the CapEx.
+  - Uses **chosen miner** + `n_miners` + Year-1 economics.
+- Other TradFi plays”:
+  - Open to suggestions

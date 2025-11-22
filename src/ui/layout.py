@@ -23,7 +23,7 @@ from src.core.fiat_forecast_engine import (
     build_fiat_monthly_forecast,
     fiat_forecast_to_dataframe,
 )
-from src.core.forecast_utils import build_halving_dates
+from src.core.forecast_utils import build_halving_dates, build_unified_monthly_table
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
 from src.core.miner_analytics import (
     build_viability_summary,
@@ -35,6 +35,7 @@ from src.core.scenario_config import build_default_scenarios
 from src.core.scenario_engine import run_scenario
 from src.core.site_metrics import SiteMetrics, compute_site_metrics
 from src.ui.assumptions import render_assumptions_and_methodology
+from src.ui.forecast_types import BTCForecastContext, FiatForecastContext
 from src.ui.miner_selection import (
     get_current_selected_miner,
     load_miner_options,
@@ -1141,15 +1142,15 @@ def render_dashboard() -> None:
 
 def _render_btc_monthly_forecast(
     site_metrics: SiteMetrics, site_inputs, network_data: NetworkData
-):
-    ctx = {
-        "monthly_rows": [],
-        "monthly_df": pd.DataFrame(),
-        "fee_growth_pct": float(getattr(settings, "DEFAULT_FEE_GROWTH_PCT", 0)),
-        "difficulty_growth_pct": float(
+) -> BTCForecastContext:
+    ctx = BTCForecastContext(
+        monthly_rows=[],
+        monthly_df=pd.DataFrame(),
+        fee_growth_pct=float(getattr(settings, "DEFAULT_FEE_GROWTH_PCT", 0)),
+        difficulty_growth_pct=float(
             getattr(settings, "DEFAULT_HASHRATE_GROWTH_PCT", 0)
         ),
-    }
+    )
     with st.expander("BTC forecast (monthly)...", expanded=False):
         st.markdown("**BTC forecast (monthly)**")
 
@@ -1169,8 +1170,8 @@ def _render_btc_monthly_forecast(
             step=1,
             help="Annual growth rate for transaction fees per block.",
         )
-        ctx["fee_growth_pct"] = float(fee_growth_pct)
-        ctx["difficulty_growth_pct"] = float(difficulty_growth_pct)
+        ctx.fee_growth_pct = float(fee_growth_pct)
+        ctx.difficulty_growth_pct = float(difficulty_growth_pct)
 
         monthly_rows = build_monthly_forecast(
             site=site_metrics,
@@ -1179,9 +1180,9 @@ def _render_btc_monthly_forecast(
             fee_growth_pct_per_year=float(fee_growth_pct),
             hashrate_growth_pct_per_year=float(difficulty_growth_pct),
         )
-        ctx["monthly_rows"] = monthly_rows
+        ctx.monthly_rows = monthly_rows
         monthly_df = forecast_to_dataframe(monthly_rows)
-        ctx["monthly_df"] = monthly_df
+        ctx.monthly_df = monthly_df
 
         if monthly_df.empty:
             st.info("Monthly forecast unavailable for current inputs.")
@@ -1307,13 +1308,16 @@ so you can align the model with your own view.
 
 
 def _render_fiat_monthly_forecast(
-    site_metrics: SiteMetrics, site_inputs, network_data: NetworkData, btc_ctx: dict
-):
-    ctx = {
-        "fiat_rows": [],
-        "fiat_df": pd.DataFrame(),
-        "price_growth_pct": float(getattr(settings, "DEFAULT_BTC_PRICE_GROWTH_PCT", 0)),
-    }
+    site_metrics: SiteMetrics,
+    site_inputs,
+    network_data: NetworkData,
+    btc_ctx: BTCForecastContext,
+) -> FiatForecastContext:
+    ctx = FiatForecastContext(
+        fiat_rows=[],
+        fiat_df=pd.DataFrame(),
+        price_growth_pct=float(getattr(settings, "DEFAULT_BTC_PRICE_GROWTH_PCT", 0)),
+    )
     with st.expander("Fiat forecast (monthly)...", expanded=False):
         price_growth_pct = st.slider(
             "BTC price growth (%/year)",
@@ -1323,9 +1327,9 @@ def _render_fiat_monthly_forecast(
             step=1,
             help="Annual BTC price growth, applied monthly.",
         )
-        ctx["price_growth_pct"] = float(price_growth_pct)
+        ctx.price_growth_pct = float(price_growth_pct)
 
-        monthly_rows = btc_ctx.get("monthly_rows")
+        monthly_rows = btc_ctx.monthly_rows
         if not monthly_rows:
             monthly_rows = build_monthly_forecast(
                 site=site_metrics,
@@ -1340,7 +1344,7 @@ def _render_fiat_monthly_forecast(
                     )
                 ),
             )
-        monthly_df = btc_ctx.get("monthly_df")
+        monthly_df = btc_ctx.monthly_df
         if monthly_df is None or monthly_df.empty:
             monthly_df = forecast_to_dataframe(monthly_rows)
 
@@ -1350,9 +1354,9 @@ def _render_fiat_monthly_forecast(
             annual_price_growth_pct=float(price_growth_pct),
             usd_to_gbp=network_data.usd_to_gbp,
         )
-        ctx["fiat_rows"] = fiat_rows
+        ctx.fiat_rows = fiat_rows
         fiat_df = fiat_forecast_to_dataframe(fiat_rows)
-        ctx["fiat_df"] = fiat_df
+        ctx.fiat_df = fiat_df
 
         if fiat_df.empty:
             st.info("Fiat forecast unavailable for current inputs.")
@@ -1452,26 +1456,19 @@ def _render_fiat_monthly_forecast(
 
 
 def _render_unified_forecast_table(
-    network_data: NetworkData, btc_ctx: dict, fiat_ctx: dict
+    network_data: NetworkData,
+    btc_ctx: BTCForecastContext,
+    fiat_ctx: FiatForecastContext,
 ):
-    monthly_df = btc_ctx.get("monthly_df") if btc_ctx else None
-    fiat_df = fiat_ctx.get("fiat_df") if fiat_ctx else None
+    monthly_df = btc_ctx.monthly_df if btc_ctx else None
+    fiat_df = fiat_ctx.fiat_df if fiat_ctx else None
     if monthly_df is None or fiat_df is None or monthly_df.empty or fiat_df.empty:
         return
 
     with st.expander("Unified BTC & Fiat forecast (monthly)...", expanded=False):
-        unified_df = monthly_df[["Month", "BTC mined"]].copy()
-        unified_df = unified_df.merge(
-            fiat_df[["Month", "Revenue (GBP)", "BTC price (USD)"]],
-            on="Month",
-            how="left",
+        unified_df = build_unified_monthly_table(
+            monthly_df, fiat_df, usd_to_gbp=network_data.usd_to_gbp
         )
-        if "BTC price (USD)" in unified_df.columns:
-            unified_df["BTC price (GBP)"] = (
-                unified_df["BTC price (USD)"] * network_data.usd_to_gbp
-            )
-        display_cols = ["Month", "BTC mined", "Revenue (GBP)", "BTC price (GBP)"]
-        unified_df = unified_df[display_cols]
 
         st.dataframe(
             unified_df.style.format(
