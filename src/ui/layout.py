@@ -21,9 +21,12 @@ from src.core.btc_forecast_engine import (
 from src.core.capex import compute_capex_breakdown
 from src.core.fiat_forecast_engine import (
     build_fiat_monthly_forecast,
-    fiat_forecast_to_dataframe,
 )
-from src.core.forecast_utils import build_halving_dates, build_unified_monthly_table
+from src.core.forecast_utils import (
+    build_unified_monthly_table,
+    prepare_btc_display,
+    prepare_fiat_display,
+)
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
 from src.core.miner_analytics import (
     build_viability_summary,
@@ -1181,22 +1184,21 @@ def _render_btc_monthly_forecast(
             hashrate_growth_pct_per_year=float(difficulty_growth_pct),
         )
         ctx.monthly_rows = monthly_rows
-        monthly_df = forecast_to_dataframe(monthly_rows)
+        monthly_df, y_domain, halving_dates = prepare_btc_display(
+            monthly_rows,
+            pad_pct=getattr(settings, "HISTOGRAM_Y_PAD_PCT", 0.3) or 0.0,
+            next_halving=getattr(settings, "NEXT_HALVING_DATE", None),
+            interval_years=int(getattr(settings, "HALVING_INTERVAL_YEARS", 4)),
+        )
         ctx.monthly_df = monthly_df
 
         if monthly_df.empty:
             st.info("Monthly forecast unavailable for current inputs.")
             return ctx
 
-        monthly_df["Month"] = pd.to_datetime(monthly_df["Month"])
-        bar_color = "#cfd2d6"
-        y_pad_pct = getattr(settings, "HISTOGRAM_Y_PAD_PCT", 0.3) or 0.0
-        y_max = monthly_df["BTC mined"].max()
-        y_domain = (0, float(y_max * (1 + y_pad_pct))) if y_max > 0 else (0, 1)
-
         bar_layer = (
             alt.Chart(monthly_df)
-            .mark_bar(color=bar_color)
+            .mark_bar(color=getattr(settings, "BTC_BAR_GREY_HEX", "#cfd2d6"))
             .encode(
                 x=alt.X(
                     "Month:T",
@@ -1211,11 +1213,9 @@ def _render_btc_monthly_forecast(
                 tooltip=[
                     alt.Tooltip("Month:T", title="Month"),
                     alt.Tooltip("BTC mined:Q", title="BTC mined", format=".5f"),
-                    alt.Tooltip("Subsidy (BTC/block):Q", title="Subsidy", format=".4f"),
-                    alt.Tooltip("Fee (BTC/block):Q", title="Fee", format=".6f"),
-                    alt.Tooltip(
-                        "Total reward (BTC/block):Q", title="Reward", format=".6f"
-                    ),
+                    alt.Tooltip("Block subsidy:Q", title="Subsidy", format=".4f"),
+                    alt.Tooltip("Block Tx Fees (BTC):Q", title="Fee", format=".6f"),
+                    alt.Tooltip("Block reward:Q", title="Reward", format=".6f"),
                 ],
             )
         )
@@ -1233,11 +1233,6 @@ def _render_btc_monthly_forecast(
         )
 
         halving_layer = None
-        halving_dates = build_halving_dates(
-            getattr(settings, "NEXT_HALVING_DATE", None),
-            int(getattr(settings, "HALVING_INTERVAL_YEARS", 4)),
-            monthly_df["Month"].max().date(),
-        )
         if halving_dates:
             halving_df = pd.DataFrame({"halving": halving_dates})
             halving_layer = (
@@ -1258,6 +1253,7 @@ def _render_btc_monthly_forecast(
             .properties(title="BTC forecast (monthly)", height=320)
         )
         st.altair_chart(chart, width="stretch")
+        st.caption("Vertical dashed lines mark estimated halving dates.")
 
         with st.expander("BTC forecast (monthly) diagnostics...", expanded=False):
             annual_df = annual_totals(monthly_rows)
@@ -1296,9 +1292,9 @@ so you can align the model with your own view.
                 {
                     "Month": _format_month,
                     "BTC mined": "{:.5f}",
-                    "Total reward (BTC/block)": "{:.6f}",
-                    "Subsidy (BTC/block)": "{:.4f}",
-                    "Fee (BTC/block)": "{:.6f}",
+                    "Block reward": "{:.6f}",
+                    "Block subsidy": "{:.4f}",
+                    "Block Tx Fees (BTC)": "{:.6f}",
                 }
             ),
             width="stretch",
@@ -1355,18 +1351,17 @@ def _render_fiat_monthly_forecast(
             usd_to_gbp=network_data.usd_to_gbp,
         )
         ctx.fiat_rows = fiat_rows
-        fiat_df = fiat_forecast_to_dataframe(fiat_rows)
+        fiat_df, y_domain, halving_dates = prepare_fiat_display(
+            fiat_rows=fiat_rows,
+            pad_pct=getattr(settings, "LINE_Y_PAD_PCT", 0.3) or 0.0,
+            next_halving=getattr(settings, "NEXT_HALVING_DATE", None),
+            interval_years=int(getattr(settings, "HALVING_INTERVAL_YEARS", 4)),
+        )
         ctx.fiat_df = fiat_df
 
         if fiat_df.empty:
             st.info("Fiat forecast unavailable for current inputs.")
             return ctx
-
-        fiat_df["Month"] = pd.to_datetime(fiat_df["Month"])
-
-        line_pad = getattr(settings, "LINE_Y_PAD_PCT", 0.3) or 0.0
-        y_max = fiat_df["Revenue (GBP)"].max()
-        y_domain = (0, float(y_max * (1 + line_pad))) if y_max > 0 else (0, 1)
 
         left_line = (
             alt.Chart(fiat_df)
@@ -1412,11 +1407,6 @@ def _render_fiat_monthly_forecast(
         )
 
         halving_layer = None
-        halving_dates = build_halving_dates(
-            getattr(settings, "NEXT_HALVING_DATE", None),
-            int(getattr(settings, "HALVING_INTERVAL_YEARS", 4)),
-            fiat_df["Month"].max().date(),
-        )
         if halving_dates:
             halving_df = pd.DataFrame({"halving": halving_dates})
             halving_layer = (

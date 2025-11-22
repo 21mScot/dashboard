@@ -72,6 +72,7 @@ DEFAULT_BTC_PRICE_GROWTH_PCT = 20
 DATE_DISPLAY_FMT = "%d/%m/%Y"
 BITCOIN_ORANGE_HEX = "#F7931A"
 FIAT_NEUTRAL_BLUE_HEX = "#1f77b4"
+BTC_BAR_GREY_HEX = "#cfd2d6"
 LINE_STYLE_ACTUAL = []  # actual/observed series
 LINE_STYLE_FORECAST = [6, 3]  # dashed/broken for projections
 
