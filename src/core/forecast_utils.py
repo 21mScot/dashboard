@@ -29,3 +29,22 @@ def build_halving_dates(
         halving_points.append(current)
         current = date(current.year + interval_years, current.month, current.day)
     return halving_points
+
+
+def build_unified_monthly_table(monthly_df, fiat_df, usd_to_gbp: float):
+    """
+    Merge BTC and fiat monthly data and compute BTC price in GBP.
+    Expects both dataframes to have a Month column.
+    """
+    if monthly_df is None or fiat_df is None or monthly_df.empty or fiat_df.empty:
+        return monthly_df
+
+    unified_df = monthly_df[["Month", "BTC mined"]].copy()
+    unified_df = unified_df.merge(
+        fiat_df[["Month", "Revenue (GBP)", "BTC price (USD)"]],
+        on="Month",
+        how="left",
+    )
+    if "BTC price (USD)" in unified_df.columns:
+        unified_df["BTC price (GBP)"] = unified_df["BTC price (USD)"] * usd_to_gbp
+    return unified_df[["Month", "BTC mined", "Revenue (GBP)", "BTC price (GBP)"]]
