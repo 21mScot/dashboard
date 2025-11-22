@@ -4,7 +4,6 @@ from __future__ import annotations
 import base64
 import textwrap
 from datetime import datetime, timezone
-from typing import List, Optional
 
 import altair as alt
 import pandas as pd
@@ -15,7 +14,11 @@ from src.config.settings import LIVE_DATA_CACHE_TTL_S
 from src.config.version import APP_VERSION, PRIVACY_URL, TERMS_URL
 from src.core.capex import compute_capex_breakdown
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
-from src.core.miner_economics import compute_miner_economics
+from src.core.miner_analytics import (
+    build_viability_summary,
+    compute_breakeven_points,
+    compute_payback_points,
+)
 from src.core.scenario_calculations import build_base_annual_from_site_metrics
 from src.core.scenario_config import build_default_scenarios
 from src.core.scenario_engine import run_scenario
@@ -212,64 +215,6 @@ def build_site_metrics_from_inputs(
         cooling_overhead_pct=cooling_overhead_pct,
         usd_to_gbp_rate=network_data.usd_to_gbp,
     )
-
-
-def _build_breakeven_df(
-    miners: List,
-    network_data: NetworkData,
-    uptime_pct: float,
-) -> pd.DataFrame:
-    uptime_factor = max(0.0, min(uptime_pct, 100.0)) / 100.0
-    rows = []
-    for miner in miners:
-        econ = compute_miner_economics(miner.hashrate_th, network_data)
-        revenue_gbp = econ.revenue_usd_per_day * network_data.usd_to_gbp * uptime_factor
-        kwh_day = (miner.power_w / 1000.0) * 24.0 * uptime_factor
-        if kwh_day > 0:
-            breakeven_price = revenue_gbp / kwh_day
-        else:
-            breakeven_price = None
-        rows.append(
-            {
-                "miner": miner.name,
-                "efficiency_j_per_th": miner.efficiency_j_per_th,
-                "breakeven_price_gbp_per_kwh": breakeven_price,
-            }
-        )
-    return pd.DataFrame(rows)
-
-
-def _build_payback_df(
-    miners: List,
-    network_data: NetworkData,
-    uptime_pct: float,
-    extra_power_price: Optional[float] = None,
-) -> pd.DataFrame:
-    uptime_factor = max(0.0, min(uptime_pct, 100.0)) / 100.0
-    power_prices = [p / 1000 for p in range(5, 151, 5)]  # £0.005 .. £0.150
-    if extra_power_price and extra_power_price not in power_prices:
-        power_prices.append(extra_power_price)
-    rows = []
-    for miner in miners:
-        econ = compute_miner_economics(miner.hashrate_th, network_data)
-        revenue_gbp = econ.revenue_usd_per_day * network_data.usd_to_gbp * uptime_factor
-        kwh_day = (miner.power_w / 1000.0) * 24.0 * uptime_factor
-        price_gbp = (miner.price_usd or 0.0) * network_data.usd_to_gbp
-        for power_price in power_prices:
-            profit = revenue_gbp - kwh_day * power_price
-            if profit <= 0 or price_gbp <= 0:
-                payback = None
-            else:
-                payback = price_gbp / profit
-            rows.append(
-                {
-                    "miner": miner.name,
-                    "efficiency_j_per_th": miner.efficiency_j_per_th,
-                    "power_price_gbp_per_kwh": power_price,
-                    "payback_days": payback,
-                }
-            )
-    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------
@@ -663,13 +608,23 @@ def render_dashboard() -> None:
                 # Breakeven & payback charts for available miners
                 with st.expander("Breakeven & payback (all miners)...", expanded=False):
                     miners = list(load_miner_options())
-                    breakeven_df = _build_breakeven_df(
+                    breakeven_points = compute_breakeven_points(
                         miners=miners,
-                        network_data=network_data,
+                        network=network_data,
                         uptime_pct=site_inputs.uptime_pct,
                     )
-                    breakeven_df = breakeven_df.dropna(
-                        subset=["breakeven_price_gbp_per_kwh"]
+                    breakeven_df = pd.DataFrame(
+                        [
+                            {
+                                "miner": pt.miner,
+                                "efficiency_j_per_th": pt.efficiency_j_per_th,
+                                "breakeven_price_gbp_per_kwh": (
+                                    pt.breakeven_price_gbp_per_kwh
+                                ),
+                            }
+                            for pt in breakeven_points
+                            if pt.breakeven_price_gbp_per_kwh is not None
+                        ]
                     )
 
                     if not breakeven_df.empty:
@@ -777,39 +732,44 @@ def render_dashboard() -> None:
                     else:
                         st.info("No breakeven data available for current inputs.")
 
-                    payback_df = _build_payback_df(
+                    power_prices = [p / 1000 for p in range(5, 151, 5)]
+                    if (
+                        site_inputs.electricity_cost
+                        and site_inputs.electricity_cost not in power_prices
+                    ):
+                        power_prices.append(site_inputs.electricity_cost)
+                    breakeven_map_for_payback = {
+                        row["miner"]: row["breakeven_price_gbp_per_kwh"]
+                        for _, row in breakeven_df.iterrows()
+                    }
+                    payback_cap_days = 5000
+                    payback_points = compute_payback_points(
                         miners=miners,
-                        network_data=network_data,
+                        network=network_data,
                         uptime_pct=site_inputs.uptime_pct,
-                        extra_power_price=site_inputs.electricity_cost,
+                        power_prices_gbp=power_prices,
+                        breakeven_map=breakeven_map_for_payback,
+                        cap_days=payback_cap_days,
                     )
-                    payback_df = payback_df.dropna(subset=["payback_days"])
+                    payback_df = pd.DataFrame(
+                        [
+                            {
+                                "miner": pt.miner,
+                                "efficiency_j_per_th": pt.efficiency_j_per_th,
+                                "power_price_gbp_per_kwh": pt.power_price_gbp_per_kwh,
+                                "payback_days": pt.payback_days,
+                            }
+                            for pt in payback_points
+                            if pt.payback_days is not None
+                        ]
+                    )
                     if not payback_df.empty:
-                        payback_cap_days = 5000  # cap for chart readability
-                        breakeven_map_for_payback = {
-                            row["miner"]: row["breakeven_price_gbp_per_kwh"]
-                            for _, row in breakeven_df.iterrows()
-                        }
-                        clipped_payback_df = payback_df.copy()
-                        clipped_payback_df["breakeven_price_gbp_per_kwh"] = (
-                            clipped_payback_df["miner"].map(breakeven_map_for_payback)
-                        )
-                        clipped_payback_df = clipped_payback_df[
-                            clipped_payback_df["breakeven_price_gbp_per_kwh"].notna()
-                        ]
-                        clipped_payback_df = clipped_payback_df[
-                            clipped_payback_df["power_price_gbp_per_kwh"]
-                            <= clipped_payback_df["breakeven_price_gbp_per_kwh"]
-                        ]
-                        clipped_payback_df = clipped_payback_df[
-                            clipped_payback_df["payback_days"] <= payback_cap_days
-                        ]
 
                         rule_df = pd.DataFrame(
                             {"power_price_gbp_per_kwh": [site_inputs.electricity_cost]}
                         )
                         payback_chart = (
-                            alt.Chart(clipped_payback_df)
+                            alt.Chart(payback_df)
                             .mark_line()
                             .encode(
                                 x=alt.X(
@@ -940,16 +900,6 @@ def render_dashboard() -> None:
                         payback_lines_df["breakeven_price_gbp_per_kwh"] = (
                             payback_lines_df["miner"].map(breakeven_map)
                         )
-                        payback_lines_df = payback_lines_df[
-                            payback_lines_df["breakeven_price_gbp_per_kwh"].notna()
-                        ]
-                        payback_lines_df = payback_lines_df[
-                            payback_lines_df["power_price_gbp_per_kwh"]
-                            <= payback_lines_df["breakeven_price_gbp_per_kwh"]
-                        ]
-                        payback_lines_df = payback_lines_df[
-                            payback_lines_df["payback_days"] <= payback_cap_days
-                        ]
                         payback_lines_df["viable"] = (
                             payback_lines_df["breakeven_price_gbp_per_kwh"]
                             >= site_price
@@ -1030,42 +980,12 @@ def render_dashboard() -> None:
                         st.altair_chart(viability_chart, width="stretch")
 
                         # Summary table: viability + breakeven + payback at site price
-                        site_payback = []
-                        for miner in miners:
-                            breakeven_price = breakeven_map.get(miner.name)
-                            viable = (
-                                breakeven_price is not None
-                                and site_price is not None
-                                and breakeven_price >= site_price
-                            )
-                            # Payback at site price if viable and present in df
-                            payback_at_site = None
-                            if (
-                                breakeven_price is not None
-                                and site_price is not None
-                                and site_price > 0
-                            ):
-                                match = payback_df[
-                                    (payback_df["miner"] == miner.name)
-                                    & (
-                                        payback_df["power_price_gbp_per_kwh"]
-                                        == site_price
-                                    )
-                                ]
-                                if not match.empty:
-                                    payback_at_site = match.iloc[0]["payback_days"]
-                            site_payback.append(
-                                {
-                                    "Miner": miner.name,
-                                    "Viable at site": "Yes" if viable else "No",
-                                    "Breakeven price (p/kWh)": (
-                                        breakeven_price * 100
-                                        if breakeven_price is not None
-                                        else None
-                                    ),
-                                    "Payback at site price (days)": payback_at_site,
-                                }
-                            )
+                        site_payback = build_viability_summary(
+                            miners=miners,
+                            breakeven_map=breakeven_map,
+                            site_price_gbp_per_kwh=site_price,
+                            payback_points=payback_points,
+                        )
                         summary_df = pd.DataFrame(site_payback)
                         if not summary_df.empty:
                             summary_df = summary_df.sort_values(
