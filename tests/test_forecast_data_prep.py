@@ -36,6 +36,18 @@ def test_prepare_btc_display_builds_df_and_halvings():
     assert halvings  # at least one halving date
 
 
+def test_prepare_btc_display_empty_rows():
+    df, y_domain, halvings = prepare_btc_display(
+        [],
+        pad_pct=0.2,
+        next_halving=(2024, 4, 1),
+        interval_years=4,
+    )
+    assert df.empty
+    assert y_domain == (0.0, 1.0)
+    assert halvings == []
+
+
 def test_prepare_fiat_display_builds_df_and_halvings():
     fiat_rows = [
         {
@@ -55,3 +67,35 @@ def test_prepare_fiat_display_builds_df_and_halvings():
     assert df["Month"].dtype.kind == "M"
     assert y_domain[0] == 0.0 and y_domain[1] > 0
     assert halvings
+
+
+def test_prepare_fiat_display_missing_month_column():
+    fiat_rows = [
+        {
+            "Revenue (GBP)": 1000.0,
+            "BTC price (USD)": 50000.0,
+            "BTC mined": 0.1,
+        }
+    ]
+    df, y_domain, halvings = prepare_fiat_display(
+        fiat_rows,
+        pad_pct=0.3,
+        next_halving=(2024, 4, 1),
+        interval_years=4,
+    )
+    # Month is missing, so rows are dropped -> empty result
+    assert df.empty
+    assert y_domain == (0.0, 1.0)
+    assert halvings == []
+
+
+def test_prepare_fiat_display_empty_rows():
+    df, y_domain, halvings = prepare_fiat_display(
+        [],
+        pad_pct=0.3,
+        next_halving=(2024, 4, 1),
+        interval_years=4,
+    )
+    assert df.empty
+    assert y_domain == (0.0, 1.0)
+    assert halvings == []
