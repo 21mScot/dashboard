@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import base64
+import locale
 import textwrap
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import altair as alt
 import pandas as pd
@@ -12,7 +13,16 @@ import streamlit as st
 from src.config import settings
 from src.config.settings import LIVE_DATA_CACHE_TTL_S
 from src.config.version import APP_VERSION, PRIVACY_URL, TERMS_URL
+from src.core.btc_forecast_engine import (
+    annual_totals,
+    build_monthly_forecast,
+    forecast_to_dataframe,
+)
 from src.core.capex import compute_capex_breakdown
+from src.core.fiat_forecast_engine import (
+    build_fiat_monthly_forecast,
+    fiat_forecast_to_dataframe,
+)
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
 from src.core.miner_analytics import (
     build_viability_summary,
@@ -39,6 +49,12 @@ from src.ui.scenarios import (
     render_scenarios_and_risk,
 )
 from src.ui.site_inputs import render_site_inputs
+
+# Try to honor the user's locale for date formatting; fallback to settings.
+try:
+    locale.setlocale(locale.LC_TIME, "")
+except Exception:
+    pass
 
 
 # ---------------------------------------------------------
@@ -224,6 +240,7 @@ def _build_scenario_results_snapshot(
     site_metrics: SiteMetrics,
     usd_to_gbp: float,
     client_share_pct: float,
+    go_live_date,
 ):
     project_years = _derive_project_years(site_metrics)
 
@@ -231,6 +248,7 @@ def _build_scenario_results_snapshot(
         base_years = build_base_annual_from_site_metrics(
             site=site_metrics,
             project_years=project_years,
+            go_live_date=go_live_date,
         )
     else:
         base_years = _build_dummy_base_years(
@@ -1032,6 +1050,7 @@ def render_dashboard() -> None:
                 site_metrics=site_metrics,
                 usd_to_gbp=network_data.usd_to_gbp,
                 client_share_pct=client_share_pct,
+                go_live_date=site_inputs.go_live_date,
             )
 
             if scenario_results:
@@ -1059,6 +1078,7 @@ def render_dashboard() -> None:
                         site_metrics=site_metrics,
                         usd_to_gbp=network_data.usd_to_gbp,
                         client_share_pct=client_share_pct,
+                        go_live_date=site_inputs.go_live_date,
                     )
                     if updated_results:
                         base_result, best_result, worst_result = updated_results
@@ -1081,7 +1101,405 @@ def render_dashboard() -> None:
             else:
                 st.info("Project-level scenarios are unavailable until inputs are set.")
 
-        st.markdown("---")
+            # Monthly BTC forecast (halving + difficulty aware)
+            with st.expander("BTC forecast (monthly)...", expanded=False):
+                st.markdown("**BTC forecast (monthly)**")
+
+                difficulty_growth_pct = st.slider(
+                    "Hashrate growth (%/year)",
+                    min_value=0,
+                    max_value=100,
+                    value=int(settings.DEFAULT_HASHRATE_GROWTH_PCT),
+                    step=1,
+                    help="Annual growth rate for global network hashrate.",
+                )
+                fee_growth_pct = st.slider(
+                    "Fee growth (%/year)",
+                    min_value=0,
+                    max_value=100,
+                    value=int(getattr(settings, "DEFAULT_FEE_GROWTH_PCT", 0)),
+                    step=1,
+                    help="Annual growth rate for transaction fees per block.",
+                )
+
+                monthly_rows = build_monthly_forecast(
+                    site=site_metrics,
+                    start_date=site_inputs.go_live_date,
+                    project_years=_derive_project_years(site_metrics),
+                    fee_growth_pct_per_year=float(fee_growth_pct),
+                    hashrate_growth_pct_per_year=float(difficulty_growth_pct),
+                )
+                monthly_df = forecast_to_dataframe(monthly_rows)
+
+                if not monthly_df.empty:
+                    monthly_df["Month"] = pd.to_datetime(monthly_df["Month"])
+                    bar_color = "#cfd2d6"
+                    y_pad_pct = getattr(settings, "HISTOGRAM_Y_PAD_PCT", 0.3) or 0.0
+                    y_max = monthly_df["BTC mined"].max()
+                    y_domain = (
+                        (0, float(y_max * (1 + y_pad_pct))) if y_max > 0 else (0, 1)
+                    )
+                    bar_layer = (
+                        alt.Chart(monthly_df)
+                        .mark_bar(color=bar_color)
+                        .encode(
+                            x=alt.X(
+                                "Month:T",
+                                title="Month",
+                                axis=alt.Axis(format="%b '%y", labelAngle=-45),
+                            ),
+                            y=alt.Y(
+                                "BTC mined:Q",
+                                title="BTC mined (per month)",
+                                scale=alt.Scale(domain=y_domain, nice=False),
+                            ),
+                            tooltip=[
+                                alt.Tooltip("Month:T", title="Month"),
+                                alt.Tooltip(
+                                    "BTC mined:Q", title="BTC mined", format=".5f"
+                                ),
+                                alt.Tooltip(
+                                    "Subsidy (BTC/block):Q",
+                                    title="Subsidy",
+                                    format=".4f",
+                                ),
+                                alt.Tooltip(
+                                    "Fee (BTC/block):Q", title="Fee", format=".6f"
+                                ),
+                                alt.Tooltip(
+                                    "Total reward (BTC/block):Q",
+                                    title="Reward",
+                                    format=".6f",
+                                ),
+                            ],
+                        )
+                    )
+                    right_axis = (
+                        alt.Chart(monthly_df)
+                        .mark_line(opacity=0)
+                        .encode(
+                            x="Month:T",
+                            y=alt.Y(
+                                "BTC mined:Q",
+                                axis=alt.Axis(
+                                    title="BTC mined (per month)", orient="right"
+                                ),
+                                scale=alt.Scale(domain=y_domain, nice=False),
+                            ),
+                        )
+                    )
+                    # Halving markers (vertical dashed lines)
+                    halving_dates = []
+                    halving_tuple = getattr(settings, "NEXT_HALVING_DATE", None)
+                    interval_years = int(getattr(settings, "HALVING_INTERVAL_YEARS", 4))
+                    if halving_tuple and len(halving_tuple) == 3:
+                        next_halving = date(*halving_tuple)
+                        last_month = monthly_df["Month"].max().date()
+                        while next_halving <= last_month:
+                            halving_dates.append({"halving": next_halving})
+                            next_halving = date(
+                                next_halving.year + interval_years,
+                                next_halving.month,
+                                next_halving.day,
+                            )
+                    halving_layer = None
+                    if halving_dates:
+                        halving_df = pd.DataFrame(halving_dates)
+                        halving_layer = (
+                            alt.Chart(halving_df)
+                            .mark_rule(
+                                color=getattr(
+                                    settings, "BITCOIN_ORANGE_HEX", "#F7931A"
+                                ),
+                                strokeDash=[4, 4],
+                            )
+                            .encode(x="halving:T")
+                        )
+
+                    layers = [bar_layer, right_axis]
+                    if halving_layer is not None:
+                        layers.append(halving_layer)
+
+                    chart = (
+                        alt.layer(*layers)
+                        .resolve_scale(y="independent")
+                        .properties(title="BTC forecast (monthly)", height=320)
+                    )
+                    st.altair_chart(chart, width="stretch")
+                    st.caption("Vertical dashed lines mark estimated halving dates.")
+
+                    with st.expander(
+                        "BTC forecast (monthly) diagnostics...", expanded=False
+                    ):
+                        annual_df = annual_totals(monthly_rows)
+                        total_btc = monthly_df["BTC mined"].sum()
+                        st.metric("Cumulative BTC (project)", f"{total_btc:,.5f} BTC")
+                        if not annual_df.empty:
+                            st.dataframe(
+                                annual_df.style.format({"BTC mined": "{:.5f}"}),
+                                width="stretch",
+                                hide_index=True,
+                            )
+                        else:
+                            st.info("No annual totals available.")
+
+                    st.markdown(
+                        textwrap.dedent(
+                            """
+We model two protocol-level effects that are outside your control:
+• Block reward (subsidy halvings + transaction fees)
+• Global network hashrate growth, which we map into difficulty adjustments
+  to keep block time ≈ 10 minutes.
+
+We do not explicitly model short-term block time variance or orphan blocks,
+as these average out over multi-month horizons and have negligible impact
+on long-term site economics.
+
+**Clear disclaimer:** There is no accepted industry standard for forecasting
+future hashrate or fee growth. We provide transparent, adjustable assumptions
+so you can align the model with your own view.
+                            """
+                        ).strip()
+                    )
+
+                    # Table inside the main expander, below everything
+                    st.dataframe(
+                        monthly_df.style.format(
+                            {
+                                "Month": _format_month,
+                                "BTC mined": "{:.5f}",
+                                "Total reward (BTC/block)": "{:.6f}",
+                                "Subsidy (BTC/block)": "{:.4f}",
+                                "Fee (BTC/block)": "{:.6f}",
+                            }
+                        ),
+                        width="stretch",
+                        hide_index=True,
+                    )
+                else:
+                    st.info("Monthly forecast unavailable for current inputs.")
+
+            # Fiat forecast (monthly) built on BTC forecast
+            with st.expander("Fiat forecast (monthly)...", expanded=False):
+                price_growth_pct = st.slider(
+                    "BTC price growth (%/year)",
+                    min_value=-100,
+                    max_value=200,
+                    value=int(getattr(settings, "DEFAULT_BTC_PRICE_GROWTH_PCT", 0)),
+                    step=1,
+                    help="Annual BTC price growth, applied monthly.",
+                )
+
+                # Reuse monthly BTC forecast rows
+                monthly_rows = build_monthly_forecast(
+                    site=site_metrics,
+                    start_date=site_inputs.go_live_date,
+                    project_years=_derive_project_years(site_metrics),
+                    fee_growth_pct_per_year=float(fee_growth_pct),
+                    hashrate_growth_pct_per_year=float(difficulty_growth_pct),
+                )
+
+                if monthly_rows:
+                    fiat_rows = build_fiat_monthly_forecast(
+                        monthly_btc_rows=monthly_rows,
+                        start_price_usd=network_data.btc_price_usd,
+                        annual_price_growth_pct=float(price_growth_pct),
+                        usd_to_gbp=network_data.usd_to_gbp,
+                    )
+                    fiat_df = fiat_forecast_to_dataframe(fiat_rows)
+                    if not fiat_df.empty:
+                        fiat_df["Month"] = pd.to_datetime(fiat_df["Month"])
+
+                        line_pad = getattr(settings, "LINE_Y_PAD_PCT", 0.3) or 0.0
+                        y_max = fiat_df["Revenue (GBP)"].max()
+                        y_domain = (
+                            (0, float(y_max * (1 + line_pad))) if y_max > 0 else (0, 1)
+                        )
+
+                        left_line = (
+                            alt.Chart(fiat_df)
+                            .mark_line(
+                                color=getattr(
+                                    settings, "FIAT_NEUTRAL_BLUE_HEX", "#1f77b4"
+                                )
+                            )
+                            .encode(
+                                x=alt.X(
+                                    "Month:T",
+                                    title="Month",
+                                    axis=alt.Axis(format="%b '%y", labelAngle=-45),
+                                ),
+                                y=alt.Y(
+                                    "Revenue (GBP):Q",
+                                    title="Revenue (GBP)",
+                                    scale=alt.Scale(domain=y_domain, nice=False),
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("Month:T", title="Month"),
+                                    alt.Tooltip(
+                                        "Revenue (GBP):Q",
+                                        title="Revenue (GBP)",
+                                        format=",.0f",
+                                    ),
+                                    alt.Tooltip(
+                                        "BTC price (USD):Q",
+                                        title="BTC price (USD)",
+                                        format=",.0f",
+                                    ),
+                                    alt.Tooltip(
+                                        "BTC mined:Q",
+                                        title="BTC mined",
+                                        format=".5f",
+                                    ),
+                                ],
+                            )
+                        )
+                        right_axis = (
+                            alt.Chart(fiat_df)
+                            .mark_line(opacity=0)
+                            .encode(
+                                x=alt.X(
+                                    "Month:T",
+                                    title="Month",
+                                    axis=alt.Axis(format="%b '%y", labelAngle=-45),
+                                ),
+                                y=alt.Y(
+                                    "Revenue (GBP):Q",
+                                    axis=alt.Axis(
+                                        title="Revenue (GBP)", orient="right"
+                                    ),
+                                    scale=alt.Scale(domain=y_domain, nice=False),
+                                ),
+                            )
+                        )
+                        # Halving markers
+                        halving_dates = []
+                        halving_tuple = getattr(settings, "NEXT_HALVING_DATE", None)
+                        interval_years = int(
+                            getattr(settings, "HALVING_INTERVAL_YEARS", 4)
+                        )
+                        if halving_tuple and len(halving_tuple) == 3:
+                            next_halving = date(*halving_tuple)
+                            last_month = fiat_df["Month"].max().date()
+                            while next_halving <= last_month:
+                                halving_dates.append({"halving": next_halving})
+                                next_halving = date(
+                                    next_halving.year + interval_years,
+                                    next_halving.month,
+                                    next_halving.day,
+                                )
+                        halving_layer = None
+                        if halving_dates:
+                            halving_df = pd.DataFrame(halving_dates)
+                            halving_layer = (
+                                alt.Chart(halving_df)
+                                .mark_rule(
+                                    color=getattr(
+                                        settings, "BITCOIN_ORANGE_HEX", "#F7931A"
+                                    ),
+                                    strokeDash=[4, 4],
+                                )
+                                .encode(x="halving:T")
+                            )
+
+                        layers = [left_line, right_axis]
+                        if halving_layer is not None:
+                            layers.append(halving_layer)
+
+                        chart = (
+                            alt.layer(*layers)
+                            .resolve_scale(y="independent")
+                            .properties(title="Fiat forecast (monthly)", height=300)
+                        )
+                        st.altair_chart(chart, width="stretch")
+                        st.caption(
+                            "Vertical dashed lines mark estimated halving dates."
+                        )
+
+                        date_fmt = getattr(settings, "DATE_DISPLAY_FMT", "%d-%b-%Y")
+                        st.dataframe(
+                            fiat_df.style.format(
+                                {
+                                    "Month": _format_month,
+                                    "Revenue (GBP)": "£{:,.0f}",
+                                    "BTC price (USD)": "${:,.0f}",
+                                    "BTC mined": "{:.5f}",
+                                }
+                            ),
+                            width="stretch",
+                            hide_index=True,
+                        )
+                    else:
+                        st.info("Fiat forecast unavailable for current inputs.")
+                else:
+                    st.info("Fiat forecast unavailable for current inputs.")
+
+            # Unified BTC + Fiat view (combined axes: BTC left, fiat right)
+            with st.expander(
+                "Unified BTC & Fiat forecast (monthly)...", expanded=False
+            ):
+                # Reuse previously computed forecasts; fallback to recompute if missing
+                if "monthly_df" not in locals() or monthly_df.empty:
+                    monthly_rows = build_monthly_forecast(
+                        site=site_metrics,
+                        start_date=site_inputs.go_live_date,
+                        project_years=_derive_project_years(site_metrics),
+                        fee_growth_pct_per_year=float(fee_growth_pct),
+                        hashrate_growth_pct_per_year=float(difficulty_growth_pct),
+                    )
+                    monthly_df = forecast_to_dataframe(monthly_rows)
+                    monthly_df["Month"] = pd.to_datetime(monthly_df["Month"])
+                if "fiat_df" not in locals() or fiat_df.empty:
+                    monthly_rows = build_monthly_forecast(
+                        site=site_metrics,
+                        start_date=site_inputs.go_live_date,
+                        project_years=_derive_project_years(site_metrics),
+                        fee_growth_pct_per_year=float(fee_growth_pct),
+                        hashrate_growth_pct_per_year=float(difficulty_growth_pct),
+                    )
+                    fiat_rows = build_fiat_monthly_forecast(
+                        monthly_btc_rows=monthly_rows,
+                        start_price_usd=network_data.btc_price_usd,
+                        annual_price_growth_pct=float(price_growth_pct),
+                        usd_to_gbp=network_data.usd_to_gbp,
+                    )
+                    fiat_df = fiat_forecast_to_dataframe(fiat_rows)
+                    fiat_df["Month"] = pd.to_datetime(fiat_df["Month"])
+
+                if monthly_df.empty or fiat_df.empty:
+                    st.info("Unified view unavailable for current inputs.")
+                else:
+                    # Data table for unified view (no chart)
+                    unified_df = monthly_df[["Month", "BTC mined"]].copy()
+                    unified_df = unified_df.merge(
+                        fiat_df[["Month", "Revenue (GBP)", "BTC price (USD)"]],
+                        on="Month",
+                        how="left",
+                    )
+                    if "BTC price (USD)" in unified_df.columns:
+                        unified_df["BTC price (GBP)"] = (
+                            unified_df["BTC price (USD)"] * network_data.usd_to_gbp
+                        )
+                    display_cols = [
+                        "Month",
+                        "BTC mined",
+                        "Revenue (GBP)",
+                        "BTC price (GBP)",
+                    ]
+                    unified_df = unified_df[display_cols]
+
+                    st.dataframe(
+                        unified_df.style.format(
+                            {
+                                "Month": _format_month,
+                                "BTC mined": "{:.5f}",
+                                "Revenue (GBP)": "£{:,.0f}",
+                                "BTC price (GBP)": "£{:,.0f}",
+                            }
+                        ),
+                        width="stretch",
+                        hide_index=True,
+                    )
 
     # ---------------------------------------------------------
     # SCENARIOS TAB
@@ -1097,6 +1515,7 @@ def render_dashboard() -> None:
                 miner=selected_miner,
                 network_data=network_data,
                 usd_to_gbp=network_data.usd_to_gbp,
+                go_live_date=site_inputs.go_live_date,
             )
 
     # ---------------------------------------------------------
@@ -1105,8 +1524,20 @@ def render_dashboard() -> None:
     with tab_assumptions:
         render_assumptions_and_methodology()
 
+    st.markdown("---")
+
     render_pdf_download_section()
     render_footer()
+
+
+def _format_month(value):
+    if pd.isna(value):
+        return ""
+    fmt = getattr(settings, "DATE_DISPLAY_FMT", "%d/%m/%Y")
+    try:
+        return value.strftime(fmt)
+    except Exception:
+        return str(value)
 
 
 def render_footer() -> None:

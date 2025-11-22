@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import streamlit as st
 
 from src.config import settings
+from src.config.env import APP_ENV
 
 
 def _add_years_safe(d: date, years: int) -> date:
@@ -53,12 +54,17 @@ def render_site_inputs() -> SiteInputs:
     )
 
     col_power, col_cost = st.columns(2)
+    is_dev = APP_ENV.lower() == "dev"
+    default_power = settings.DEV_DEFAULT_SITE_POWER_KW if is_dev else 0
+    default_cost = settings.DEV_DEFAULT_POWER_PRICE_GBP_PER_KWH if is_dev else 0.0
+    default_uptime = settings.DEV_DEFAULT_UPTIME_PCT if is_dev else 0
+
     with col_power:
         site_power_kw = st.number_input(
             "Available site power (kW)",
             min_value=0,
             max_value=5000,
-            value=0,
+            value=default_power,
             step=1,
             format="%d",
             help="Total electrical capacity available for miners.",
@@ -69,7 +75,7 @@ def render_site_inputs() -> SiteInputs:
             "Cost of generation (£ per kWh)",
             min_value=0.0,
             max_value=1.000,
-            value=0.0,
+            value=default_cost,
             step=0.001,
             format="%.3f",
             help="Your electricity tariff, including any standing charges.",
@@ -79,7 +85,7 @@ def render_site_inputs() -> SiteInputs:
         "Expected uptime (%)",
         min_value=0,
         max_value=100,
-        value=0,
+        value=default_uptime,
         help="Percentage of time the site is expected to remain online.",
     )
     # Cooling overhead hidden from UI but retained for calculations
@@ -118,6 +124,7 @@ def render_site_inputs() -> SiteInputs:
         # Make project duration available to other tabs (e.g. Scenarios)
         st.session_state["project_years_from_go_live"] = int(project_years)
         st.session_state["project_years"] = int(project_years)
+        st.session_state["project_go_live_date"] = go_live_date
 
     # ----------------------------------------------------------------------
     # Build and return the SiteInputs object

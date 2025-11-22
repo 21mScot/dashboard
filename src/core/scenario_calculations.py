@@ -1,7 +1,8 @@
 # src/core/scenario_calculations.py
 from __future__ import annotations
 
-from typing import List
+from datetime import date
+from typing import List, Optional
 
 from src.config import settings
 from src.core.scenario_models import (
@@ -12,9 +13,43 @@ from src.core.scenario_models import (
 from src.core.site_metrics import SiteMetrics
 
 
+def _add_years_safe(d: date, years: int) -> date:
+    """Add whole years to a date, handling leap years."""
+    try:
+        return d.replace(year=d.year + years)
+    except ValueError:
+        return d.replace(month=2, day=28, year=d.year + years)
+
+
+def _block_subsidy_factor(start_date: date, year_index: int) -> float:
+    """Return the halving multiplier for the given project year."""
+    next_halving_tuple = getattr(settings, "NEXT_HALVING_DATE", None)
+    if not next_halving_tuple or len(next_halving_tuple) != 3:
+        return 1.0
+    halving_date = date(*next_halving_tuple)
+    interval_years = int(getattr(settings, "HALVING_INTERVAL_YEARS", 4))
+
+    year_start = _add_years_safe(start_date, year_index - 1)
+    halvings = 0
+    while year_start >= halving_date:
+        halvings += 1
+        halving_date = _add_years_safe(halving_date, interval_years)
+
+    return 0.5**halvings if halvings > 0 else 1.0
+
+
+def _difficulty_factor(year_index: int) -> float:
+    """Difficulty growth reduces BTC mined over time."""
+    growth = getattr(settings, "DEFAULT_ANNUAL_DIFFICULTY_GROWTH_PCT", 0.0)
+    if growth == 0:
+        return 1.0
+    return 1.0 / ((1.0 + growth) ** (year_index - 1))
+
+
 def build_base_annual_from_site_metrics(
     site: SiteMetrics,
     project_years: int,
+    go_live_date: Optional[date] = None,
 ) -> List[AnnualBaseEconomics]:
     """
     Build a base-case annual economics series directly from the
@@ -23,8 +58,8 @@ def build_base_annual_from_site_metrics(
     Assumptions:
       - SiteMetrics already includes uptime and cooling/overhead effects.
       - BTC price is implied from site_revenue_usd_per_day / site_btc_per_day.
-      - Each year in the *base* case is identical; price/difficulty/
-        electricity shocks are applied later via ScenarioConfig.
+      - Base case decays BTC mined over time via difficulty drift and
+        halvings; price/electricity shocks are layered later via ScenarioConfig.
     """
 
     if project_years <= 0:
@@ -41,12 +76,20 @@ def build_base_annual_from_site_metrics(
         btc_price_usd = settings.DEFAULT_BTC_PRICE_USD
 
     years: List[AnnualBaseEconomics] = []
+    start_date = go_live_date or date.today()
 
     for year_idx in range(1, project_years + 1):
-        # Base physics: same each year before scenario shocks
-        btc_mined = site.site_btc_per_day * 365.0
+        subsidy_factor = _block_subsidy_factor(
+            start_date=start_date,
+            year_index=year_idx,
+        )
+        difficulty_factor = _difficulty_factor(year_idx)
 
-        revenue_gbp = site.site_revenue_gbp_per_day * 365.0
+        btc_mined = site.site_btc_per_day * 365.0 * subsidy_factor * difficulty_factor
+
+        revenue_gbp = (
+            site.site_revenue_gbp_per_day * 365.0 * subsidy_factor * difficulty_factor
+        )
         electricity_cost_gbp = site.site_power_cost_gbp_per_day * 365.0
 
         # At the moment we don't model "other opex" explicitly at the
