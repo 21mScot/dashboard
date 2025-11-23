@@ -35,13 +35,9 @@ def compute_investment_metrics(
 
     net_cf = df["net_cashflow_gbp"].astype(float).to_numpy()
 
-    print("Initial CapEx:", initial_capex_gbp)
-    print("First 10 net CFs:", df["net_cashflow_gbp"].head(10).to_list())
-
     total_net_cash_gbp = -float(initial_capex_gbp) + float(net_cf.sum())
 
     cashflows = np.concatenate(([-float(initial_capex_gbp)], net_cf, [0.0]))
-    print("Cashflows passed to IRR:", cashflows)
 
     irr_monthly = None
     if npf is not None:
