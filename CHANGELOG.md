@@ -4,6 +4,15 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.21.0] - 2025-11-23
+### Added
+- Investment metrics pipeline: compute total net cash and monthly/annual IRR from monthly net cashflows and CapEx; new Streamlit investment summary panel with tooltips.
+- Cumulative cashflow & payback chart now returns payback info and uses a lighter zero line; added Plotly unified BTC/fiat chart with optional BTC price path and halving markers.
+- Fiat/BTC Plotly enhancements: power cost and net cashflow overlays, refined line styling, and explanatory text across forecast expanders.
+- Added `numpy-financial` dependency for IRR calculations; new `investment_metrics` core helper and UI wiring.
+### Changed
+- Version bumped to v0.21.0 to capture investment metrics and unified Plotly chart updates.
+
 ## [v0.20.0] - 2025-11-23
 ### Added
 - Rebuilt BTC and fiat forecasts in Plotly with dual axes, halving labels, and semantic BTC orange/fiat blue styling; BTC forecast now shows monthly and cumulative series with dashed forecast conventions.
@@ -54,7 +63,8 @@ All notable changes will be documented in this file.
 - `black` / `ruff` pre-commit hooks
 - Manual Streamlit UI smoke test (scenarios + miner selection)
 
-[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.21.0...HEAD
+[v0.21.0]: https://github.com/21mScot/dashboard/releases/tag/v0.21.0
 [v0.20.0]: https://github.com/21mScot/dashboard/releases/tag/v0.20.0
 [v0.19.0]: https://github.com/21mScot/dashboard/releases/tag/v0.19.0
 [v0.18.0]: https://github.com/21mScot/dashboard/releases/tag/v0.18.0

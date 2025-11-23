@@ -101,7 +101,7 @@ def render_btc_forecast_chart(
 
     fig.update_layout(
         title=title,
-        xaxis=dict(title="Month"),
+        xaxis=dict(title=None),
         yaxis=dict(title="BTC mined / month", side="left"),
         yaxis2=dict(
             title="Cumulative BTC",
@@ -126,7 +126,7 @@ def render_cumulative_cashflow_chart(
     df: pd.DataFrame,
     initial_capex_gbp: float,
     title: str = "Cumulative cashflow & payback",
-) -> None:
+) -> tuple[Optional[int], Optional[str]]:
     """
     Plot cumulative net cashflow over time and highlight payback point.
     Expects:
@@ -245,10 +245,213 @@ def render_cumulative_cashflow_chart(
             f"**Payback achieved in month {months_to_payback} "
             f"({payback_month.strftime('%b %Y')}).**"
         )
+        return months_to_payback, payback_month.strftime("%b %Y")
+
+    st.warning(
+        "Payback is not reached within the modelled period "
+        "(cumulative cashflow remains below £0)."
+    )
+    return None, None
+
+
+def render_unified_forecast_chart(
+    df: pd.DataFrame,
+    show_btc_price: bool = True,
+    title: str = "Unified BTC & Fiat forecast",
+    halving_dates: list[pd.Timestamp] | None = None,
+) -> None:
+    """
+    Unified view showing BTC mined (left axis) and revenue (right axis),
+    with optional BTC price path. Accepts month, btc_mined or btc_mined_month,
+    revenue_gbp, optional btc_price_gbp/usd, and halving markers.
+    """
+    df_plot = df.copy()
+    if "btc_mined" not in df_plot.columns and "btc_mined_month" in df_plot.columns:
+        df_plot["btc_mined"] = df_plot["btc_mined_month"]
+
+    required = {"month", "btc_mined", "revenue_gbp"}
+    missing = required - set(df_plot.columns)
+    if missing:
+        raise ValueError(f"Unified chart missing columns: {missing}")
+
+    btc_orange = getattr(settings, "BITCOIN_ORANGE_HEX", "#F7931A")
+    fiat_blue = getattr(settings, "FIAT_NEUTRAL_BLUE_HEX", "#1f77b4")
+
+    df_plot = df_plot.sort_values("month").copy()
+    df_plot["month"] = pd.to_datetime(df_plot["month"])
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df_plot["month"],
+            y=df_plot["btc_mined"],
+            name="BTC mined / month",
+            mode="lines",
+            line=dict(color=btc_orange, width=1.5),
+            yaxis="y1",
+            hovertemplate="BTC mined: %{y:.8f} BTC<extra></extra>",
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=df_plot["month"],
+            y=df_plot["revenue_gbp"],
+            name="Revenue / month (GBP)",
+            mode="lines",
+            line=dict(color=fiat_blue, width=2.8),
+            yaxis="y2",
+            hovertemplate="Revenue: £%{y:,.0f}<extra></extra>",
+        )
+    )
+
+    price_col = None
+    price_label = ""
+    if "btc_price_gbp" in df_plot.columns:
+        price_col = "btc_price_gbp"
+        price_label = "BTC price (GBP)"
+    elif "btc_price_usd" in df_plot.columns:
+        price_col = "btc_price_usd"
+        price_label = "BTC price (USD)"
+
+    if show_btc_price and price_col:
+        fig.add_trace(
+            go.Scatter(
+                x=df_plot["month"],
+                y=df_plot[price_col],
+                name=price_label,
+                mode="lines",
+                yaxis="y2",
+                line=dict(color=btc_orange, width=1.2, dash="dot"),
+                opacity=0.6,
+                hovertemplate=f"{price_label}: %{{y:,.0f}}<extra></extra>",
+            )
+        )
+
+    if "is_halving" in df_plot.columns:
+        halvings = df_plot[df_plot["is_halving"] == True]  # noqa: E712
+        for _, row in halvings.iterrows():
+            month = row["month"]
+            label = row.get("halving_label") or f"Halving – {month.strftime('%b %Y')}"
+            fig.add_shape(
+                type="line",
+                x0=month,
+                x1=month,
+                y0=0,
+                y1=1,
+                xref="x",
+                yref="paper",
+                line=dict(color=btc_orange, dash="dot", width=1),
+            )
+            fig.add_annotation(
+                x=month,
+                y=1,
+                xref="x",
+                yref="paper",
+                text=label,
+                showarrow=False,
+                font=dict(color=btc_orange),
+                yshift=8,
+            )
+    elif halving_dates:
+        for h in pd.to_datetime(halving_dates):
+            label = f"Halving – {h.strftime('%b %Y')}"
+            fig.add_shape(
+                type="line",
+                x0=h,
+                x1=h,
+                y0=0,
+                y1=1,
+                xref="x",
+                yref="paper",
+                line=dict(color=btc_orange, dash="dot", width=1),
+            )
+            fig.add_annotation(
+                x=h,
+                y=1,
+                xref="x",
+                yref="paper",
+                text=label,
+                showarrow=False,
+                font=dict(color=btc_orange),
+                yshift=8,
+            )
+
+    fig.update_layout(
+        title=title,
+        xaxis=dict(title=None, dtick="M3"),
+        yaxis=dict(title="BTC mined / month", side="left", tickformat=".02f"),
+        yaxis2=dict(
+            title="Revenue & BTC price (GBP)",
+            overlaying="y",
+            side="right",
+            tickprefix="£",
+        ),
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.25,
+            xanchor="center",
+            x=0.5,
+        ),
+        margin=dict(l=60, r=70, t=60, b=60),
+    )
+
+    st.plotly_chart(fig, width="stretch")
+
+
+def render_investment_summary(
+    metrics,
+    initial_capex_gbp: float,
+    payback_month_index: Optional[int] = None,
+    payback_month_label: Optional[str] = None,
+) -> None:
+    """Render a compact investment summary beneath cumulative cashflow."""
+    st.subheader("Investment summary")
+
+    cols = st.columns(4)
+
+    with cols[0]:
+        st.metric(
+            label="CapEx (GBP)",
+            value=f"£{initial_capex_gbp:,.0f}",
+            help="Total upfront capital expenditure.",
+        )
+
+    with cols[1]:
+        st.metric(
+            label="Total net cash generated (after CapEx)",
+            value=f"£{metrics.total_net_cash_gbp:,.0f}",
+            help="Cumulative net cashflow minus initial CapEx.",
+        )
+
+    if payback_month_index is not None and payback_month_label is not None:
+        payback_text = f"Month {payback_month_index} ({payback_month_label})"
     else:
-        st.warning(
-            "Payback is not reached within the modelled period "
-            "(cumulative cashflow remains below £0)."
+        payback_text = "Not reached"
+
+    with cols[2]:
+        st.metric(
+            label="Payback",
+            value=payback_text,
+            help="First month cumulative cashflow crosses zero.",
+        )
+
+    if getattr(metrics, "irr_annual", None) is not None:
+        irr_pct = metrics.irr_annual * 100.0
+        irr_value = f"{irr_pct:,.1f}%"
+    else:
+        irr_value = "N/A"
+
+    with cols[3]:
+        st.metric(
+            label="IRR (annualised)",
+            value=irr_value,
+            help=(
+                "IRR from monthly cashflows (CapEx at t0), annualised as "
+                "(1+IRR_m)^12-1."
+            ),
         )
 
 

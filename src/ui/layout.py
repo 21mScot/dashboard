@@ -23,10 +23,12 @@ from src.core.fiat_forecast_engine import (
     build_fiat_monthly_forecast,
 )
 from src.core.forecast_utils import (
+    build_halving_dates,
     build_unified_monthly_table,
     prepare_btc_display,
     prepare_fiat_display,
 )
+from src.core.investment_metrics import compute_investment_metrics
 from src.core.live_data import LiveDataError, NetworkData, get_live_network_data
 from src.core.miner_analytics import (
     build_viability_summary,
@@ -42,6 +44,8 @@ from src.ui.charts import (
     render_btc_forecast_chart,
     render_cumulative_cashflow_chart,
     render_fiat_forecast_chart,
+    render_investment_summary,
+    render_unified_forecast_chart,
 )
 from src.ui.forecast_types import BTCForecastContext, FiatForecastContext
 from src.ui.miner_selection import (
@@ -1214,7 +1218,7 @@ def _render_btc_monthly_forecast(
             chart_df["halving_label"] = chart_df["month"].apply(
                 lambda d: f"Halving – {d.strftime('%b %Y')}"
             )
-        render_btc_forecast_chart(chart_df, title="BTC forecast (Plotly)")
+        render_btc_forecast_chart(chart_df, title="BTC forecast")
         st.caption(
             "BTC forecast chart",
             help=(
@@ -1319,6 +1323,10 @@ def _render_fiat_monthly_forecast(
             "month and projected BTC price, along with electricity cost and BTC price "
             "path."
         )
+        st.markdown(
+            "This chart answers the question - What are my monthly economics in GBP "
+            "(revenue, cost, profit)?"
+        )
         price_growth_pct = st.session_state.get(
             "fiat_price_growth_pct",
             int(getattr(settings, "DEFAULT_BTC_PRICE_GROWTH_PCT", 0)),
@@ -1400,10 +1408,18 @@ def _render_fiat_monthly_forecast(
             else 0.0
         )
         if capex > 0 and "net_cashflow_gbp" in chart_df.columns:
-            render_cumulative_cashflow_chart(
-                chart_df[["month", "net_cashflow_gbp"]].dropna(),
+            cash_df = chart_df[["month", "net_cashflow_gbp"]].dropna()
+            payback_idx, payback_label = render_cumulative_cashflow_chart(
+                cash_df,
                 initial_capex_gbp=capex,
                 title="Cumulative cashflow & payback",
+            )
+            metrics = compute_investment_metrics(cash_df, initial_capex_gbp=capex)
+            render_investment_summary(
+                metrics=metrics,
+                initial_capex_gbp=capex,
+                payback_month_index=payback_idx,
+                payback_month_label=payback_label,
             )
 
         with st.expander("Fiat forecast advanced...", expanded=False):
@@ -1449,6 +1465,29 @@ def _render_unified_forecast_table(
     )
 
     with st.expander("Unified BTC & Fiat forecast...", expanded=False):
+        st.markdown(
+            "This chart answers the question - How does BTC mined × BTC price produce "
+            "that revenue?"
+        )
+        chart_df = unified_df.rename(
+            columns={
+                "Month": "month",
+                "BTC mined": "btc_mined",
+                "Revenue (GBP)": "revenue_gbp",
+                "BTC price (GBP)": "btc_price_gbp",
+            }
+        ).copy()
+        chart_df["month"] = pd.to_datetime(chart_df["month"])
+        halving_dates = build_halving_dates(
+            getattr(settings, "NEXT_HALVING_DATE", None),
+            int(getattr(settings, "HALVING_INTERVAL_YEARS", 4)),
+            chart_df["month"].max().date(),
+        )
+        render_unified_forecast_chart(
+            chart_df,
+            title="Unified BTC & Fiat forecast",
+            halving_dates=halving_dates,
+        )
         with st.expander("Unified BTC & Fiat forecast advanced...", expanded=False):
             st.dataframe(
                 unified_df.style.format(
