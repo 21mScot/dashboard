@@ -1,17 +1,45 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.env
-.venv/
-venv/
-
-# VS Code
-.vscode/
-
-# Streamlit
-.streamlit/cache/
-
-# macOS
+# --- OS junk (macOS) ---
 .DS_Store
 **/.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Environment & secrets ---
+.env
+*.env
+
+# --- Packaging and build ---
+build/
+dist/
+*.egg-info/
+*.egg
+
+# --- Jupyter & notebooks ---
+.ipynb_checkpoints/
+
+# --- Logs ---
+*.log
+
+# --- Streamlit ---
+.streamlit/secrets.toml
+.streamlit/*.log
+.streamlit/cache/
+.streamlit/static/
+
+# --- VS Code ---
+.vscode/
+
+# --- Node/npm (if used in your dashboard) ---
+node_modules/

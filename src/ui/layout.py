@@ -1154,24 +1154,21 @@ def _render_btc_monthly_forecast(
             getattr(settings, "DEFAULT_HASHRATE_GROWTH_PCT", 0)
         ),
     )
-    with st.expander("BTC forecast (monthly)...", expanded=False):
-        st.markdown("**BTC forecast (monthly)**")
+    with st.expander("BTC forecast...", expanded=False):
 
-        difficulty_growth_pct = st.slider(
-            "Hashrate growth (%/year)",
-            min_value=0,
-            max_value=100,
-            value=int(settings.DEFAULT_HASHRATE_GROWTH_PCT),
-            step=1,
-            help="Annual growth rate for global network hashrate.",
+        placeholder_hashrate_key = "placeholder_hashrate_growth_pct"
+        difficulty_growth_pct = int(
+            st.session_state.get(
+                placeholder_hashrate_key,
+                int(settings.DEFAULT_HASHRATE_GROWTH_PCT),
+            )
         )
-        fee_growth_pct = st.slider(
-            "Fee growth (%/year)",
-            min_value=0,
-            max_value=100,
-            value=int(getattr(settings, "DEFAULT_FEE_GROWTH_PCT", 0)),
-            step=1,
-            help="Annual growth rate for transaction fees per block.",
+        placeholder_fee_key = "placeholder_fee_growth_pct"
+        fee_growth_pct = int(
+            st.session_state.get(
+                placeholder_fee_key,
+                int(getattr(settings, "DEFAULT_FEE_GROWTH_PCT", 0)),
+            )
         )
         ctx.fee_growth_pct = float(fee_growth_pct)
         ctx.difficulty_growth_pct = float(difficulty_growth_pct)
@@ -1196,9 +1193,52 @@ def _render_btc_monthly_forecast(
             st.info("Monthly forecast unavailable for current inputs.")
             return ctx
 
-        bar_layer = (
+        halving_layer = None
+        halving_label_layer = None
+        if halving_dates:
+            label_y = (
+                float(y_domain[1]) if y_domain else float(monthly_df["BTC mined"].max())
+            )
+            halving_df_rows = []
+            for h in halving_dates:
+                label_str = pd.to_datetime(h).strftime("%b '%y")
+                halving_df_rows.append(
+                    {
+                        "halving": h,
+                        "label_y": label_y,
+                        "label_text": f"Halving ({label_str})",
+                    }
+                )
+            halving_df = pd.DataFrame(halving_df_rows)
+            halving_layer = (
+                alt.Chart(halving_df)
+                .mark_rule(
+                    color=getattr(settings, "BITCOIN_ORANGE_HEX", "#F7931A"),
+                    strokeDash=[4, 4],
+                )
+                .encode(x="halving:T")
+            )
+            halving_label_layer = (
+                alt.Chart(halving_df)
+                .mark_text(
+                    dy=-6,
+                    color=getattr(settings, "BITCOIN_ORANGE_HEX", "#F7931A"),
+                    baseline="bottom",
+                    align="left",
+                )
+                .encode(
+                    x="halving:T",
+                    y=alt.Y("label_y:Q", axis=None),
+                    text="label_text:N",
+                )
+            )
+        # Line view of BTC forecast (dashed BTC orange for forecasted series)
+        line_layers = [
             alt.Chart(monthly_df)
-            .mark_bar(color=getattr(settings, "BTC_BAR_GREY_HEX", "#cfd2d6"))
+            .mark_line(
+                color=getattr(settings, "BITCOIN_ORANGE_HEX", "#F7931A"),
+                strokeDash=getattr(settings, "LINE_STYLE_FORECAST", [6, 3]),
+            )
             .encode(
                 x=alt.X(
                     "Month:T",
@@ -1213,49 +1253,22 @@ def _render_btc_monthly_forecast(
                 tooltip=[
                     alt.Tooltip("Month:T", title="Month"),
                     alt.Tooltip("BTC mined:Q", title="BTC mined", format=".5f"),
-                    alt.Tooltip("Block subsidy:Q", title="Subsidy", format=".4f"),
-                    alt.Tooltip("Block Tx Fees (BTC):Q", title="Fee", format=".6f"),
                     alt.Tooltip("Block reward:Q", title="Reward", format=".6f"),
                 ],
             )
-        )
-        right_axis = (
-            alt.Chart(monthly_df)
-            .mark_line(opacity=0)
-            .encode(
-                x="Month:T",
-                y=alt.Y(
-                    "BTC mined:Q",
-                    axis=alt.Axis(title="BTC mined (per month)", orient="right"),
-                    scale=alt.Scale(domain=y_domain, nice=False),
-                ),
-            )
-        )
-
-        halving_layer = None
-        if halving_dates:
-            halving_df = pd.DataFrame({"halving": halving_dates})
-            halving_layer = (
-                alt.Chart(halving_df)
-                .mark_rule(
-                    color=getattr(settings, "BITCOIN_ORANGE_HEX", "#F7931A"),
-                    strokeDash=[4, 4],
-                )
-                .encode(x="halving:T")
-            )
-
-        layers = [bar_layer, right_axis]
+        ]
         if halving_layer is not None:
-            layers.append(halving_layer)
-        chart = (
-            alt.layer(*layers)
+            line_layers.append(halving_layer)
+        if halving_label_layer is not None:
+            line_layers.append(halving_label_layer)
+        line_chart = (
+            alt.layer(*line_layers)
             .resolve_scale(y="independent")
-            .properties(title="BTC forecast (monthly)", height=320)
+            .properties(title="BTC forecast", height=260)
         )
-        st.altair_chart(chart, width="stretch")
-        st.caption("Vertical dashed lines mark estimated halving dates.")
+        st.altair_chart(line_chart, width="stretch")
 
-        with st.expander("BTC forecast (monthly) diagnostics...", expanded=False):
+        with st.expander("BTC forecast diagnostics...", expanded=False):
             annual_df = annual_totals(monthly_rows)
             total_btc = monthly_df["BTC mined"].sum()
             st.metric("Cumulative BTC (project)", f"{total_btc:,.5f} BTC")
@@ -1268,9 +1281,10 @@ def _render_btc_monthly_forecast(
             else:
                 st.info("No annual totals available.")
 
-        st.markdown(
-            textwrap.dedent(
-                """
+        with st.expander("BTC forecast advanced...", expanded=False):
+            st.markdown(
+                textwrap.dedent(
+                    """
 We model two protocol-level effects that are outside your control:
 • Block reward (subsidy halvings + transaction fees)
 • Global network hashrate growth, which we map into difficulty adjustments
@@ -1283,23 +1297,53 @@ on long-term site economics.
 **Clear disclaimer:** There is no accepted industry standard for forecasting
 future hashrate or fee growth. We provide transparent, adjustable assumptions
 so you can align the model with your own view.
-                """
-            ).strip()
-        )
+                    """
+                ).strip()
+            )
+            placeholder_hashrate_growth = st.slider(
+                "Hashrate growth (%/year)",
+                min_value=0,
+                max_value=100,
+                value=int(difficulty_growth_pct),
+                step=1,
+                key=placeholder_hashrate_key,
+                help="Placeholder slider mirroring the main hashrate growth control.",
+            )
+            placeholder_fee_growth = st.slider(
+                "Fee growth (%/year)",
+                min_value=0,
+                max_value=100,
+                value=int(fee_growth_pct),
+                step=1,
+                key=placeholder_fee_key,
+                help="Placeholder slider mirroring the main fee growth control.",
+            )
+            fee_growth_pct = placeholder_fee_growth
+            ctx.fee_growth_pct = float(placeholder_fee_growth)
+            difficulty_growth_pct = placeholder_hashrate_growth
+            ctx.difficulty_growth_pct = float(placeholder_hashrate_growth)
 
-        st.dataframe(
-            monthly_df.style.format(
-                {
-                    "Month": _format_month,
-                    "BTC mined": "{:.5f}",
-                    "Block reward": "{:.6f}",
-                    "Block subsidy": "{:.4f}",
-                    "Block Tx Fees (BTC)": "{:.6f}",
+            display_df = monthly_df.rename(
+                columns={
+                    "BTC mined": "BTC mined (BTC)",
+                    "Block reward": "Block reward (BTC)",
+                    "Block subsidy": "Block subsidy (BTC)",
                 }
-            ),
-            width="stretch",
-            hide_index=True,
-        )
+            )
+            st.dataframe(
+                display_df.style.format(
+                    {
+                        "Month": _format_month,
+                        "BTC mined (BTC)": "{:.5f}",
+                        "Block reward (BTC)": "{:.6f}",
+                        "Block subsidy (BTC)": "{:.4f}",
+                        "Block Tx Fees (BTC)": "{:.6f}",
+                    },
+                    na_rep="—",
+                ),
+                width="stretch",
+                hide_index=True,
+            )
     return ctx
 
 
@@ -1314,15 +1358,11 @@ def _render_fiat_monthly_forecast(
         fiat_df=pd.DataFrame(),
         price_growth_pct=float(getattr(settings, "DEFAULT_BTC_PRICE_GROWTH_PCT", 0)),
     )
-    with st.expander("Fiat forecast (monthly)...", expanded=False):
-        price_growth_pct = st.slider(
-            "BTC price growth (%/year)",
-            min_value=-100,
-            max_value=200,
-            value=int(getattr(settings, "DEFAULT_BTC_PRICE_GROWTH_PCT", 0)),
-            step=1,
-            help="Annual BTC price growth, applied monthly.",
-        )
+    with st.expander("Fiat forecast...", expanded=False):
+        price_growth_pct = st.session_state.get(
+            "fiat_price_growth_pct",
+            int(getattr(settings, "DEFAULT_BTC_PRICE_GROWTH_PCT", 0)),
+        ) or int(getattr(settings, "DEFAULT_BTC_PRICE_GROWTH_PCT", 0))
         ctx.price_growth_pct = float(price_growth_pct)
 
         monthly_rows = btc_ctx.monthly_rows
@@ -1365,7 +1405,10 @@ def _render_fiat_monthly_forecast(
 
         left_line = (
             alt.Chart(fiat_df)
-            .mark_line(color=getattr(settings, "FIAT_NEUTRAL_BLUE_HEX", "#1f77b4"))
+            .mark_line(
+                color=getattr(settings, "FIAT_NEUTRAL_BLUE_HEX", "#1f77b4"),
+                strokeDash=getattr(settings, "LINE_STYLE_FORECAST", [6, 3]),
+            )
             .encode(
                 x=alt.X(
                     "Month:T",
@@ -1407,8 +1450,24 @@ def _render_fiat_monthly_forecast(
         )
 
         halving_layer = None
+        halving_label_layer = None
         if halving_dates:
-            halving_df = pd.DataFrame({"halving": halving_dates})
+            label_y = (
+                float(y_domain[1])
+                if y_domain
+                else float(fiat_df["Revenue (GBP)"].max())
+            )
+            halving_df_rows = []
+            for h in halving_dates:
+                label_str = pd.to_datetime(h).strftime("%b '%y")
+                halving_df_rows.append(
+                    {
+                        "halving": h,
+                        "label_y": label_y,
+                        "label_text": f"Halving ({label_str})",
+                    }
+                )
+            halving_df = pd.DataFrame(halving_df_rows)
             halving_layer = (
                 alt.Chart(halving_df)
                 .mark_rule(
@@ -1417,31 +1476,59 @@ def _render_fiat_monthly_forecast(
                 )
                 .encode(x="halving:T")
             )
+            halving_label_layer = (
+                alt.Chart(halving_df)
+                .mark_text(
+                    dy=-6,
+                    color=getattr(settings, "BITCOIN_ORANGE_HEX", "#F7931A"),
+                    baseline="bottom",
+                    align="left",
+                )
+                .encode(
+                    x="halving:T",
+                    y=alt.Y("label_y:Q", axis=None),
+                    text="label_text:N",
+                )
+            )
 
         layers = [left_line, right_axis]
         if halving_layer is not None:
             layers.append(halving_layer)
+        if halving_label_layer is not None:
+            layers.append(halving_label_layer)
 
         chart = (
             alt.layer(*layers)
             .resolve_scale(y="independent")
-            .properties(title="Fiat forecast (monthly)", height=300)
+            .properties(title="Fiat forecast", height=300)
         )
         st.altair_chart(chart, width="stretch")
-        st.caption("Vertical dashed lines mark estimated halving dates.")
 
-        st.dataframe(
-            fiat_df.style.format(
-                {
-                    "Month": _format_month,
-                    "Revenue (GBP)": "£{:,.0f}",
-                    "BTC price (USD)": "${:,.0f}",
-                    "BTC mined": "{:.5f}",
-                }
-            ),
-            width="stretch",
-            hide_index=True,
-        )
+        with st.expander("Fiat forecast advanced...", expanded=False):
+            price_growth_pct = st.slider(
+                "BTC price growth (%/year)",
+                min_value=-100,
+                max_value=200,
+                value=int(price_growth_pct),
+                step=1,
+                key="fiat_price_growth_pct",
+                help="Annual BTC price growth, applied monthly.",
+            )
+            ctx.price_growth_pct = float(price_growth_pct)
+            display_cols = ["Month", "Revenue (GBP)", "BTC price (USD)", "BTC mined"]
+            display_df = fiat_df[display_cols].copy()
+            st.dataframe(
+                display_df.style.format(
+                    {
+                        "Month": _format_month,
+                        "Revenue (GBP)": "£{:,.0f}",
+                        "BTC price (USD)": "${:,.0f}",
+                        "BTC mined": "{:.5f}",
+                    }
+                ),
+                width="stretch",
+                hide_index=True,
+            )
     return ctx
 
 
@@ -1455,23 +1542,24 @@ def _render_unified_forecast_table(
     if monthly_df is None or fiat_df is None or monthly_df.empty or fiat_df.empty:
         return
 
-    with st.expander("Unified BTC & Fiat forecast (monthly)...", expanded=False):
-        unified_df = build_unified_monthly_table(
-            monthly_df, fiat_df, usd_to_gbp=network_data.usd_to_gbp
-        )
+    unified_df = build_unified_monthly_table(
+        monthly_df, fiat_df, usd_to_gbp=network_data.usd_to_gbp
+    )
 
-        st.dataframe(
-            unified_df.style.format(
-                {
-                    "Month": _format_month,
-                    "BTC mined": "{:.5f}",
-                    "Revenue (GBP)": "£{:,.0f}",
-                    "BTC price (GBP)": "£{:,.0f}",
-                }
-            ),
-            width="stretch",
-            hide_index=True,
-        )
+    with st.expander("Unified BTC & Fiat forecast...", expanded=False):
+        with st.expander("Unified BTC & Fiat forecast advanced...", expanded=False):
+            st.dataframe(
+                unified_df.style.format(
+                    {
+                        "Month": _format_month,
+                        "BTC mined": "{:.5f}",
+                        "Revenue (GBP)": "£{:,.0f}",
+                        "BTC price (GBP)": "£{:,.0f}",
+                    }
+                ),
+                width="stretch",
+                hide_index=True,
+            )
 
 
 def _format_month(value):
