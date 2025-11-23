@@ -101,7 +101,7 @@ def render_btc_forecast_chart(
 
     fig.update_layout(
         title=title,
-        xaxis=dict(title="Month"),
+        xaxis=dict(title=""),
         yaxis=dict(title="BTC mined / month", side="left"),
         yaxis2=dict(
             title="Cumulative BTC",

@@ -1214,7 +1214,7 @@ def _render_btc_monthly_forecast(
             chart_df["halving_label"] = chart_df["month"].apply(
                 lambda d: f"Halving – {d.strftime('%b %Y')}"
             )
-        render_btc_forecast_chart(chart_df, title="BTC forecast (Plotly)")
+        render_btc_forecast_chart(chart_df, title="BTC forecast")
         st.caption(
             "BTC forecast chart",
             help=(
