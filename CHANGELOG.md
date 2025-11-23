@@ -4,6 +4,15 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.20.0] - 2025-11-23
+### Added
+- Rebuilt BTC and fiat forecasts in Plotly with dual axes, halving labels, and semantic BTC orange/fiat blue styling; BTC forecast now shows monthly and cumulative series with dashed forecast conventions.
+- Added fiat Plotly chart with gross revenue, power cost, net cashflow, and BTC price path on the secondary axis, plus tooltips and refined line weights/dashes.
+- Introduced cumulative cashflow & payback Plotly view (zero-line, payback marker/annotation) using CapEx-derived starting cashflow.
+- New helper chart functions under `src/ui/charts.py` to centralize Plotly usage; ADR updated with financial reporting line/marker conventions.
+### Changed
+- Version bump to v0.20.0 to reflect Plotly chart domain and BTC/fiat visualization overhaul.
+
 ## [v0.19.0] - 2025-11-22
 ### Added
 - Unified forecast helpers (halving dates, y-domain prep, unified table) and typed contexts for BTC/fiat forecasts.
@@ -45,7 +54,8 @@ All notable changes will be documented in this file.
 - `black` / `ruff` pre-commit hooks
 - Manual Streamlit UI smoke test (scenarios + miner selection)
 
-[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.20.0...HEAD
+[v0.20.0]: https://github.com/21mScot/dashboard/releases/tag/v0.20.0
 [v0.19.0]: https://github.com/21mScot/dashboard/releases/tag/v0.19.0
 [v0.18.0]: https://github.com/21mScot/dashboard/releases/tag/v0.18.0
 [v0.17.0]: https://github.com/21mScot/dashboard/releases/tag/v0.17.0
