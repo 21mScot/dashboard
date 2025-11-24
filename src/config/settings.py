@@ -1,16 +1,21 @@
 # src/config/settings.py
 
+import os
+
 from src.config.env import APP_ENV
 
 # Development / production settings for Bitcoin mining economics dashboard
 DEV_DEFAULT_SITE_POWER_KW = 1000
 DEV_DEFAULT_POWER_PRICE_GBP_PER_KWH = 0.045
 DEV_DEFAULT_UPTIME_PCT = 98
+# Dev-only miner catalogue selector: "legacy_wtm" (default) or "chatgpt_test"
+DEV_MINER_SET = os.getenv("DEV_MINER_SET", "legacy_wtm").lower()
 
 # --- Live data / network constants ---
 
 MEMPOOL_BLOCKTIP_URL = "https://mempool.space/api/v1/blocks/tip-height"
 BLOCKCHAIN_DIFFICULTY_URL = "https://blockchain.info/q/getdifficulty"
+BLOCKCHAIN_HASHRATE_URL = "https://blockchain.info/q/hashrate"
 COINGECKO_SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
 HASHRATEINDEX_HASHPRICE_URL = "https://api.hashrateindex.com/api/v1/public/hashprice"
 

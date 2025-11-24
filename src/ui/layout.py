@@ -807,15 +807,19 @@ def render_dashboard() -> None:
                     hashrate_th=selected_miner.hashrate_th,
                     network=network_data,
                 )
+                usd_to_gbp = network_data.usd_to_gbp or 1.0
                 revenue_gbp_per_day = (
-                    econ_single.revenue_usd_per_day
-                    * network_data.usd_to_gbp
-                    * uptime_factor
+                    econ_single.revenue_usd_per_day * usd_to_gbp * uptime_factor
                 )
                 power_cost_gbp_per_day = miner_kwh_per_day * (
                     site_inputs.electricity_cost or 0.0
                 )
                 net_gbp_per_day = revenue_gbp_per_day - power_cost_gbp_per_day
+                revenue_usd_per_day = econ_single.revenue_usd_per_day * uptime_factor
+                power_cost_usd_per_day = (
+                    power_cost_gbp_per_day / usd_to_gbp if usd_to_gbp else None
+                )
+                net_usd_per_day = net_gbp_per_day / usd_to_gbp if usd_to_gbp else None
                 breakeven_price_gbp_per_kwh = (
                     revenue_gbp_per_day / miner_kwh_per_day
                     if miner_kwh_per_day > 0
@@ -1028,6 +1032,41 @@ def render_dashboard() -> None:
                                     "Indicative capex ÷ net daily cashflow for one miner. "
                                     "Hidden if non-viable or no price available."
                                 ),
+                            )
+
+                        third1, third2, third3 = st.columns(3)
+                        with third1:
+                            profit_usd_display = (
+                                f"${net_usd_per_day:,.2f}"
+                                if net_usd_per_day is not None
+                                else "—"
+                            )
+                            st.metric(
+                                "Net income per ASIC / day (USD)",
+                                profit_usd_display,
+                                help="Gross revenue minus electricity cost for one miner, shown in USD.",
+                            )
+                        with third2:
+                            revenue_usd_display = (
+                                f"${revenue_usd_per_day:,.2f}"
+                                if revenue_usd_per_day is not None
+                                else "—"
+                            )
+                            st.metric(
+                                "Gross revenue / ASIC / day (USD)",
+                                revenue_usd_display,
+                                help="Revenue per miner per day in USD at your uptime and current network snapshot.",
+                            )
+                        with third3:
+                            power_usd_display = (
+                                f"${power_cost_usd_per_day:,.2f}"
+                                if power_cost_usd_per_day is not None
+                                else "—"
+                            )
+                            st.metric(
+                                "Power cost / ASIC / day (USD)",
+                                power_usd_display,
+                                help="Electricity cost per miner per day in USD, using your £/kWh input and FX.",
                             )
 
                         st.caption(
