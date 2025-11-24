@@ -944,7 +944,7 @@ def render_dashboard() -> None:
                     picker_col1, picker_col2 = st.columns([2, 1])
                     with picker_col1:
                         picker_miner = render_miner_picker(
-                            label="Try another miner (dev/prod catalogue)",
+                            label="Try another ASIC miner",
                         )
                         if picker_miner:
                             selected_miner = picker_miner
