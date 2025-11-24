@@ -434,8 +434,17 @@ def _build_scenario_results_snapshot(
     usd_to_gbp: float,
     client_share_pct: float,
     go_live_date,
+    total_capex_gbp: float | None = None,
 ):
     project_years = _derive_project_years(site_metrics)
+    if total_capex_gbp is None:
+        total_capex_gbp = 0.0
+    if not total_capex_gbp and st.session_state.get("pdf_capex_breakdown") is not None:
+        cached_capex = getattr(
+            st.session_state.get("pdf_capex_breakdown"), "total_gbp", None
+        )
+        if cached_capex:
+            total_capex_gbp = float(cached_capex)
 
     if isinstance(site_metrics, SiteMetrics) and site_metrics.asics_supported > 0:
         base_years = build_base_annual_from_site_metrics(
@@ -455,8 +464,6 @@ def _build_scenario_results_snapshot(
     scenarios_cfg = build_default_scenarios(
         client_share_override=client_share_pct / 100.0,
     )
-
-    total_capex_gbp: float = 0.0
 
     base_result = run_scenario(
         name="Base case",
@@ -1490,15 +1497,33 @@ def render_dashboard() -> None:
                 "These forecasts show how your selected revenue share applies across "
                 "the base, best, and worst scenarios using your inputs."
             )
+            st.caption(
+                "We feed in the CapEx from your current miner plan so the payback and ROI "
+                "figures line up with the site configuration above."
+            )
 
             default_share_pct = int(
                 settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100
             )
-            client_share_pct = (
-                st.session_state.get("overview_client_share_pct")
-                or st.session_state.get("scenario_client_share_pct")
-                or st.session_state.get("pdf_scenarios", {}).get("client_share_pct")
-                or default_share_pct
+
+            def _coerce_share_pct(value):
+                try:
+                    return int(float(value))
+                except (TypeError, ValueError):
+                    return None
+
+            client_share_candidates = [
+                st.session_state.get("overview_client_share_pct"),
+                st.session_state.get("scenario_client_share_pct"),
+                st.session_state.get("pdf_scenarios", {}).get("client_share_pct"),
+            ]
+            client_share_pct = next(
+                (
+                    pct
+                    for pct in (_coerce_share_pct(v) for v in client_share_candidates)
+                    if pct is not None
+                ),
+                default_share_pct,
             )
 
             scenario_results = _build_scenario_results_snapshot(
@@ -1506,6 +1531,7 @@ def render_dashboard() -> None:
                 usd_to_gbp=network_data.usd_to_gbp,
                 client_share_pct=client_share_pct,
                 go_live_date=site_inputs.go_live_date,
+                total_capex_gbp=getattr(capex_breakdown, "total_gbp", 0.0),
             )
 
             if scenario_results:
@@ -1518,7 +1544,7 @@ def render_dashboard() -> None:
                     heading="Scenario comparison table",
                 )
 
-                with st.expander("Scenario details...", expanded=False):
+                with st.expander("Scenario detailed analysis...", expanded=False):
                     client_share_pct = st.slider(
                         "Your share of BTC revenue (%)",
                         min_value=0,
@@ -1534,6 +1560,7 @@ def render_dashboard() -> None:
                         usd_to_gbp=network_data.usd_to_gbp,
                         client_share_pct=client_share_pct,
                         go_live_date=site_inputs.go_live_date,
+                        total_capex_gbp=getattr(capex_breakdown, "total_gbp", 0.0),
                     )
                     if updated_results:
                         base_result, best_result, worst_result = updated_results
@@ -1958,18 +1985,22 @@ def _render_fiat_monthly_forecast(
 
         monthly_rows = btc_ctx.monthly_rows
         if not monthly_rows:
+            fee_growth_pct_val = getattr(
+                btc_ctx,
+                "fee_growth_pct",
+                getattr(settings, "DEFAULT_FEE_GROWTH_PCT", 0),
+            )
+            difficulty_growth_pct_val = getattr(
+                btc_ctx,
+                "difficulty_growth_pct",
+                getattr(settings, "DEFAULT_HASHRATE_GROWTH_PCT", 0),
+            )
             monthly_rows = build_monthly_forecast(
                 site=site_metrics,
                 start_date=site_inputs.go_live_date,
                 project_years=_derive_project_years(site_metrics),
-                fee_growth_pct_per_year=float(
-                    btc_ctx.get("fee_growth_pct", settings.DEFAULT_FEE_GROWTH_PCT)
-                ),
-                hashrate_growth_pct_per_year=float(
-                    btc_ctx.get(
-                        "difficulty_growth_pct", settings.DEFAULT_HASHRATE_GROWTH_PCT
-                    )
-                ),
+                fee_growth_pct_per_year=float(fee_growth_pct_val),
+                hashrate_growth_pct_per_year=float(difficulty_growth_pct_val),
             )
         monthly_df = btc_ctx.monthly_df
         if monthly_df is None or monthly_df.empty:

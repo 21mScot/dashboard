@@ -4,6 +4,12 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.21.1] - 2025-11-24
+### Fixed
+- Wired project CapEx into Section 3 scenario payback/ROI so the financial forecasts reflect the current miner plan instead of assuming zero capital.
+- Hardened revenue-share selection to respect explicit 0–100% inputs and avoid falsy fallback behaviour.
+- Made fiat forecast fallback rebuilds safe for dataclass contexts when BTC forecasts are regenerated.
+
 ## [v0.21.0] - 2025-11-23
 ### Added
 - Investment metrics pipeline: compute total net cash and monthly/annual IRR from monthly net cashflows and CapEx; new Streamlit investment summary panel with tooltips.
@@ -63,7 +69,8 @@ All notable changes will be documented in this file.
 - `black` / `ruff` pre-commit hooks
 - Manual Streamlit UI smoke test (scenarios + miner selection)
 
-[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.21.1...HEAD
+[v0.21.1]: https://github.com/21mScot/dashboard/releases/tag/v0.21.1
 [v0.21.0]: https://github.com/21mScot/dashboard/releases/tag/v0.21.0
 [v0.20.0]: https://github.com/21mScot/dashboard/releases/tag/v0.20.0
 [v0.19.0]: https://github.com/21mScot/dashboard/releases/tag/v0.19.0
