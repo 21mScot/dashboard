@@ -1,5 +1,7 @@
 # src/config/settings.py
 
+from src.config.env import APP_ENV
+
 # Development / production settings for Bitcoin mining economics dashboard
 DEV_DEFAULT_SITE_POWER_KW = 1000
 DEV_DEFAULT_POWER_PRICE_GBP_PER_KWH = 0.045
@@ -14,8 +16,9 @@ HASHRATEINDEX_HASHPRICE_URL = "https://api.hashrateindex.com/api/v1/public/hashp
 
 # Requests / caching config
 LIVE_DATA_REQUEST_TIMEOUT_S = 10
-LIVE_DATA_CACHE_TTL_S = 60 * 60 * 24  # 24h during dev
-# LIVE_DATA_CACHE_TTL_S = 10 * 60         # 10 minutes during production
+LIVE_DATA_CACHE_TTL_S = (
+    60 * 60 * 24 if APP_ENV == "dev" else 10 * 60
+)  # 24h in dev, 10m in prod
 
 # Optional: identify yourself nicely to public APIs
 LIVE_DATA_USER_AGENT = "21mScotDashboard/0.1 (contact: you@example.com)"

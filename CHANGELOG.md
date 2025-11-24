@@ -4,6 +4,10 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.21.3] - 2025-11-24
+### Changed
+- Live network data cache TTL now respects environment: 24h in dev for stability, 10 minutes in prod for fresher data.
+
 ## [v0.21.2] - 2025-11-24
 ### Added
 - Split miner catalogues by environment: dev shows three TestMake variants for efficiency/breakeven/payback testing; prod keeps the supplier-approved set with immediate-access markers.
