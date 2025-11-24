@@ -4,6 +4,11 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.21.2] - 2025-11-24
+### Added
+- Split miner catalogues by environment: dev shows three TestMake variants for efficiency/breakeven/payback testing; prod keeps the supplier-approved set with immediate-access markers.
+- Reintroduced a miner dropdown inside “Miner detailed analysis...” so users can experiment with alternative miners; selection respects the active catalogue (APP_ENV).
+
 ## [v0.21.1] - 2025-11-24
 ### Fixed
 - Wired project CapEx into Section 3 scenario payback/ROI so the financial forecasts reflect the current miner plan instead of assuming zero capital.
