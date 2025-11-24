@@ -4,6 +4,10 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.21.4] - 2025-11-24
+### Changed
+- Synced production miner catalogue to the latest supplier spreadsheet and retained the previous set in `PREVIOUS_MINERS` for manual comparison.
+
 ## [v0.21.3] - 2025-11-24
 ### Changed
 - Live network data cache TTL now respects environment: 24h in dev for stability, 10 minutes in prod for fresher data.
