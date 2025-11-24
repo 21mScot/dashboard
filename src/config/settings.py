@@ -8,8 +8,8 @@ from src.config.env import APP_ENV
 DEV_DEFAULT_SITE_POWER_KW = 1000
 DEV_DEFAULT_POWER_PRICE_GBP_PER_KWH = 0.045
 DEV_DEFAULT_UPTIME_PCT = 98
-# Dev-only miner catalogue selector: "legacy_wtm" (default) or "chatgpt_test"
-DEV_MINER_SET = os.getenv("DEV_MINER_SET", "legacy_wtm").lower()
+# Dev-only miner catalogue selector: "legacy_wtm" or "chatgpt_test"
+DEV_MINER_SET = os.getenv("DEV_MINER_SET", "chatgpt_test").lower()
 
 # --- Live data / network constants ---
 
