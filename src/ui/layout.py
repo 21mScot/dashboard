@@ -61,6 +61,7 @@ from src.ui.miner_selection import (
     get_current_selected_miner,
     load_miner_options,
     maybe_autoselect_miner,
+    render_miner_picker,
 )
 from src.ui.pdf_export import build_pdf_report
 from src.ui.scenario_1 import render_scenario_panel
@@ -938,6 +939,15 @@ def render_dashboard() -> None:
                         f"**Supplier:** {supplier} · **Model:** {selected_miner.name} · "
                         f"**Indicative price (USD):** {price}"
                     )
+
+                    # Let users experiment with alternative miners from the active catalogue.
+                    picker_col1, picker_col2 = st.columns([2, 1])
+                    with picker_col1:
+                        picker_miner = render_miner_picker(
+                            label="Try another miner (dev/prod catalogue)",
+                        )
+                        if picker_miner:
+                            selected_miner = picker_miner
 
                     c1, c2, c3 = st.columns(3)
                     with c1:

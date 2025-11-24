@@ -7,62 +7,27 @@ from typing import Dict, Iterable, Optional
 
 import streamlit as st
 
+from src.config.env import APP_ENV
 from src.core.live_data import NetworkData
 from src.core.miner_economics import compute_miner_economics
 from src.core.miner_models import MinerOption
+from src.data import miners_dev, miners_prod
+
 
 # ---------------------------------------------------------------------------
-# Static placeholder catalogue (prices & specs indicative only)
+# Catalogue selection (dev vs prod)
 # ---------------------------------------------------------------------------
-_STATIC_MINER_OPTIONS: Dict[str, MinerOption] = {
-    "Antminer S21 (200 TH/s)": MinerOption(
-        name="Antminer S21",
-        hashrate_th=200.0,
-        power_w=3500,
-        efficiency_j_per_th=17.5,
-        supplier="Bitmain",
-        price_usd=3100.0,
-    ),
-    "Whatsminer M60 (186 TH/s)": MinerOption(
-        name="Whatsminer M60",
-        hashrate_th=186.0,
-        power_w=3425,
-        efficiency_j_per_th=18.4,
-        supplier="MicroBT",
-        price_usd=2950.0,
-    ),
-    "Antminer S19k Pro (120 TH/s)": MinerOption(
-        name="Antminer S19k Pro",
-        hashrate_th=120.0,
-        power_w=2760,
-        efficiency_j_per_th=23.0,
-        supplier="Bitmain",
-        price_usd=1800.0,
-    ),
-    "Whatsminer M63S++ (480 TH/s)": MinerOption(
-        name="Whatsminer M63S++",
-        hashrate_th=480.0,
-        power_w=7200,
-        efficiency_j_per_th=15.5,
-        supplier="MicroBT",
-        price_usd=6600.0,
-    ),
-    "Whatsminer M33S (240 TH/s)": MinerOption(
-        name="Whatsminer M33S",
-        hashrate_th=240.0,
-        power_w=7260,
-        efficiency_j_per_th=30.0,
-        supplier="MicroBT",
-        price_usd=600.0,
-    ),
-}
+def _get_catalogue() -> tuple[Dict[str, MinerOption], set[str]]:
+    """
+    Return the active miner catalogue and any immediate-access set based on APP_ENV.
 
-
-# Models available for immediate deployment (use dict keys)
-_IMMEDIATE_ACCESS_MODELS: set[str] = {
-    "Whatsminer M63S++ (480 TH/s)",
-    "Whatsminer M33S (240 TH/s)",
-}
+    - dev → uses synthetic test miners to exercise efficiency/breakeven/payback.
+    - prod → uses supplier-approved miners (current default set).
+    """
+    if APP_ENV == "dev":
+        return miners_dev.MINERS, getattr(miners_dev, "IMMEDIATE_ACCESS_MODELS", set())
+    # Default/fallback to prod catalogue
+    return miners_prod.MINERS, getattr(miners_prod, "IMMEDIATE_ACCESS_MODELS", set())
 
 
 # ---------------------------------------------------------------------------
@@ -73,8 +38,9 @@ def _get_hashrate_sorted_miners() -> OrderedDict[str, MinerOption]:
 
     Highest TH/s first → highest BTC/day first (for a given network snapshot).
     """
+    catalogue, _ = _get_catalogue()
     sorted_pairs = sorted(
-        _STATIC_MINER_OPTIONS.items(),
+        catalogue.items(),
         key=lambda item: item[1].hashrate_th,
         reverse=True,
     )
@@ -83,7 +49,8 @@ def _get_hashrate_sorted_miners() -> OrderedDict[str, MinerOption]:
 
 def load_miner_options() -> Iterable[MinerOption]:
     """Return list of miners to display in the UI."""
-    return _STATIC_MINER_OPTIONS.values()
+    catalogue, _ = _get_catalogue()
+    return catalogue.values()
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +85,7 @@ def render_miner_selection(
 
     # Sort miners by hashrate (TH/s), highest first → highest BTC/day first
     sorted_miners = _get_hashrate_sorted_miners()
+    _, immediate_access_models = _get_catalogue()
 
     # Build labels: name → TH/s → power
     option_labels: list[str] = []
@@ -143,7 +111,7 @@ def render_miner_selection(
     miner = sorted_miners[selected_key]
 
     # Immediate access highlight
-    if selected_key in _IMMEDIATE_ACCESS_MODELS:
+    if selected_key in immediate_access_models:
         st.success(
             "⚡ **Immediate Access Available**\n\n"
             "This model is available for rapid deployment from our priority stock.\n"
