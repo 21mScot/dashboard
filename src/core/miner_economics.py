@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass
 
+import numpy as np
+import pandas as pd
+
 from src.core.live_data import NetworkData
 
 
@@ -74,3 +77,78 @@ def compute_miner_economics(hashrate_th: float, network: NetworkData) -> MinerEc
     usd_day = btc_day * btc_price
 
     return MinerEconomics(btc_per_day=btc_day, revenue_usd_per_day=usd_day)
+
+
+def compute_miner_economics_table(
+    miners_df: pd.DataFrame,
+    site_power_kw: float,
+    elec_price_gbp_per_kwh: float,
+    load_factor: float,
+    btc_revenue_gbp_per_ths_per_day: float,
+) -> pd.DataFrame:
+    """
+    Enrich miners_df with per-unit and site-level economics using site inputs.
+    """
+    df = miners_df.copy()
+
+    df["max_units_by_power"] = np.floor(
+        (site_power_kw * load_factor) / df["power_kw"]
+    ).astype(int)
+
+    df["revenue_gbp_per_unit_per_day"] = (
+        df["hashrate_ths"] * btc_revenue_gbp_per_ths_per_day
+    )
+
+    df["elec_cost_gbp_per_unit_per_day"] = df["power_kw"] * 24 * elec_price_gbp_per_kwh
+
+    df["margin_gbp_per_unit_per_day"] = (
+        df["revenue_gbp_per_unit_per_day"] - df["elec_cost_gbp_per_unit_per_day"]
+    )
+
+    df["is_viable"] = df["margin_gbp_per_unit_per_day"] > 0
+
+    df["site_daily_margin_gbp"] = (
+        df["margin_gbp_per_unit_per_day"] * df["max_units_by_power"]
+    )
+
+    df["site_capex_gbp"] = df["capex_gbp"] * df["max_units_by_power"]
+
+    df["payback_days"] = np.where(
+        (df["site_daily_margin_gbp"] > 0) & (df["site_capex_gbp"] > 0),
+        df["site_capex_gbp"] / df["site_daily_margin_gbp"],
+        np.nan,
+    )
+
+    return df
+
+
+def select_recommended_miner(df: pd.DataFrame, project_years: int):
+    """
+    Pick the best miner based on viability, payback within project horizon,
+    then lowest payback, highest margin, and best efficiency.
+    """
+    project_days = project_years * 365
+
+    candidates = df[
+        (df["is_viable"])
+        & (df["max_units_by_power"] > 0)
+        & df["payback_days"].notna()
+        & (df["payback_days"] <= project_days)
+    ].copy()
+
+    if candidates.empty:
+        candidates = df[
+            (df["is_viable"])
+            & (df["max_units_by_power"] > 0)
+            & df["payback_days"].notna()
+        ].copy()
+
+    if candidates.empty:
+        return None
+
+    candidates = candidates.sort_values(
+        by=["payback_days", "site_daily_margin_gbp", "efficiency_j_per_th"],
+        ascending=[True, False, True],
+    )
+
+    return candidates.iloc[0]
