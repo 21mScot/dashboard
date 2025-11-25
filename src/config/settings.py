@@ -18,6 +18,7 @@ BLOCKCHAIN_DIFFICULTY_URL = "https://blockchain.info/q/getdifficulty"
 BLOCKCHAIN_HASHRATE_URL = "https://blockchain.info/q/hashrate"
 COINGECKO_SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
 HASHRATEINDEX_HASHPRICE_URL = "https://api.hashrateindex.com/api/v1/public/hashprice"
+DEFAULT_HASHPRICE_USD_PER_PH_DAY = 40.0
 
 # Requests / caching config
 LIVE_DATA_REQUEST_TIMEOUT_S = 10

@@ -1,5 +1,5 @@
 # Version
 
-- Current release: v0.21.6
-- Release date: 2025-11-26
-- Highlights: PDF export section now uses a Streamlit component so the View PDF action works consistently; removed the broken Print button.
+- Current release: v0.3.0-alpha
+- Release date: 2025-11-25
+- Highlights: Hashprice now sourced from blockchain.info hashrate (FOSS) with on-the-fly estimation and a static fallback; BTC network sidebar streamlined.
