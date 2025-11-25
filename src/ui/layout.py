@@ -13,6 +13,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.config import settings
 from src.config.settings import LIVE_DATA_CACHE_TTL_S
@@ -2266,12 +2267,13 @@ def render_pdf_download_section() -> None:
     )
 
     pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    button_html = f"""
+    # Use a Streamlit component so our JS runs; markdown strips scripts.
+    components.html(
+        f"""
         <style>
         .pdf-actions {{
-            width: 100%;
             display: flex;
-            justify-content: flex-end;
+            gap: 0.5rem;
         }}
         .pdf-actions button {{
             background-color: #f2f2f2;
@@ -2281,12 +2283,23 @@ def render_pdf_download_section() -> None:
             padding: 0.35rem 0.9rem;
             font-weight: 600;
             cursor: pointer;
-            width: 140px;
+            min-width: 120px;
         }}
         .pdf-actions button:hover {{
             background-color: #e5e5e5;
         }}
         </style>
+        <div style="
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:1rem;
+        ">
+            <h3 style="margin:0;">Your proposal for a 21Scot data centre</h3>
+            <div class="pdf-actions">
+                <button id="viewPdfBtn">View PDF</button>
+            </div>
+        </div>
         <script>
             const pdfData = "{pdf_base64}";
             function buildBlobUrl() {{
@@ -2299,19 +2312,12 @@ def render_pdf_download_section() -> None:
                 const blob = new Blob([byteArray], {{type: 'application/pdf'}});
                 return URL.createObjectURL(blob);
             }}
-            function openPdf() {{
+            document.getElementById('viewPdfBtn').onclick = () => {{
                 const blobUrl = buildBlobUrl();
                 window.open(blobUrl, '_blank');
-            }}
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+            }};
         </script>
-        <div style="
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            gap:1rem;
-        ">
-            <h3 style="margin:0;">Your proposal for a 21Scot data centre</h3>
-            <button onclick="openPdf()">View pdf</button>
-        </div>
-    """
-    st.markdown(button_html, unsafe_allow_html=True)
+        """,
+        height=100,
+    )
