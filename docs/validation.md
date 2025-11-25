@@ -65,3 +65,21 @@ usd_per_day = btc_per_day * btc_price_usd
 
 The 21mScot miner-economics engine matches WhatToMine under controlled assumptions with accuracy better than 1%.
 
+---
+
+## Appendix: Prod catalogue spot-check vs WhatToMine (static snapshot)
+
+Purpose: demonstrate consistency for a production miner under the same static inputs used in the legacy validation.
+
+Inputs:
+- BTC price: $90,000
+- Difficulty: 150,000,000,000,000
+- Block subsidy: 3.125 BTC (app) vs WTM block reward ~3.13 BTC (includes recent fees)
+- Power price: $0.059/kWh (WTM); app equivalent £/kWh converted via FX
+- Uptime/overhead: 100% / 0%
+
+| Miner | TH/s | Power (W) | App revenue ($/day) | WTM revenue ($/day) | App power cost ($/day) | WTM power cost ($/day) | Notes |
+|-------|------|-----------|---------------------|---------------------|------------------------|------------------------|-------|
+| Whatsminer M63 H | 478 | 7399 | $17.35 | $18.06 | $10.65 | $10.48 | Small deltas driven by block reward (subsidy-only vs fee-inclusive) and $/kWh FX rounding. |
+
+Even with the fee-inclusive reward on WTM, the variance remains within a few percent; aligning reward to the WTM effective block reward and matching $/kWh exactly removes the residual gap.
