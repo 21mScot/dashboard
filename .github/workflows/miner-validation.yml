@@ -35,4 +35,4 @@ jobs:
 
       - name: Run miner daily outputs test
         run: |
-          pytest tests/test_miner_daily_outputs.py
+          pytest tests/test_miner_daily_outputs.py tests/test_prod_miner_outputs.py

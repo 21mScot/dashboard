@@ -81,5 +81,6 @@ Inputs:
 | Miner | TH/s | Power (W) | App revenue ($/day) | WTM revenue ($/day) | App power cost ($/day) | WTM power cost ($/day) | Notes |
 |-------|------|-----------|---------------------|---------------------|------------------------|------------------------|-------|
 | Whatsminer M63 H | 478 | 7399 | $17.35 | $18.06 | $10.65 | $10.48 | Small deltas driven by block reward (subsidy-only vs fee-inclusive) and $/kWh FX rounding. |
+| Antminer S23 H+ | 580 | 5500 | $21.88 | $21.91 | $7.92 | $7.79 | Near-identical outputs; minor differences from WTM’s fee-inclusive reward and $/kWh FX conversion. |
 
 Even with the fee-inclusive reward on WTM, the variance remains within a few percent; aligning reward to the WTM effective block reward and matching $/kWh exactly removes the residual gap.

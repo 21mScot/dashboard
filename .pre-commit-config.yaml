@@ -14,6 +14,6 @@ repos:
     hooks:
       - id: miner-daily-outputs
         name: Miner daily outputs validation
-        entry: python3 -m pytest tests/test_miner_daily_outputs.py
+        entry: python3 -m pytest tests/test_miner_daily_outputs.py tests/test_prod_miner_outputs.py
         language: system
         pass_filenames: false
