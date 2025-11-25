@@ -4,6 +4,12 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.0] - 2025-11-25
+### Added
+- Estimated hashprice now computed from blockchain.info hashrate, BTC price, and block subsidy with a static fallback value.
+### Changed
+- Sidebar consolidates BTC price and hashprice in one expander; static-mode messaging references hashprice, and difficulty/subsidy/height were removed from the network panel.
+
 ## [v0.21.6] - 2025-11-26
 ### Fixed
 - PDF export controls now render via a Streamlit component so the “View PDF” action works reliably; removed the non-functioning print button.
@@ -90,7 +96,8 @@ All notable changes will be documented in this file.
 - `black` / `ruff` pre-commit hooks
 - Manual Streamlit UI smoke test (scenarios + miner selection)
 
-[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.21.6...HEAD
+[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.30.0...HEAD
+[v0.30.0]: https://github.com/21mScot/dashboard/releases/tag/v0.30.0
 [v0.21.6]: https://github.com/21mScot/dashboard/releases/tag/v0.21.6
 [v0.21.5]: https://github.com/21mScot/dashboard/releases/tag/v0.21.5
 [v0.21.4]: https://github.com/21mScot/dashboard/releases/tag/v0.21.4
