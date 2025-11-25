@@ -507,7 +507,7 @@ def _build_scenario_results_snapshot(
 # Main dashboard
 # ---------------------------------------------------------
 def render_dashboard() -> None:
-    st.title("21Scot bitcoin dashboard")
+    st.title("AD BTC mining dashboard from 21.Scot")
     st.caption("Exploring site physics, BTC production, and revenue scenarios.")
 
     # User intent: do they want to use live data?
@@ -524,9 +524,13 @@ def render_dashboard() -> None:
     if is_live:
         st.sidebar.success("Using LIVE BTC network data")
     elif requested_live:
-        st.sidebar.info("Using static BTC price and hashprice (live unavailable).")
+        st.sidebar.info(
+            "Using static BTC price, hashprice, and USD/GBP exchange rate (live unavailable)."
+        )
     else:
-        st.sidebar.info("Using static BTC price and hashprice (live disabled).")
+        st.sidebar.info(
+            "Using static BTC price, hashprice, and USD/GBP exchange rate (live disabled)."
+        )
 
     data_timestamp_utc = (
         network_data.as_of_utc.strftime("%Y-%m-%d %H:%M UTC")
@@ -551,7 +555,7 @@ def render_dashboard() -> None:
         st.caption(f"Data timestamp (UTC): {data_timestamp_utc}")
         st.caption(f"Page render time (UTC): {page_render_utc}")
 
-    with st.sidebar.expander("Foreign exchange value", expanded=True):
+    with st.sidebar.expander("Foreign exchange rate", expanded=True):
         st.metric("USD/GBP exchange rate", f"${network_data.usd_to_gbp:.3f}")
         st.caption("This value drives all the USD to GBP currency conversions.")
         st.caption(f"Data timestamp (UTC): {data_timestamp_utc}")
@@ -2280,7 +2284,7 @@ def render_pdf_download_section() -> None:
             align-items:center;
             gap:1rem;
         ">
-            <h3 style="margin:0;">Your proposal for a 21Scot data centre</h3>
+            <h3 style="margin:0;">Your proposal for a 21.Scot data centre</h3>
             <div class="pdf-actions">
                 <button id="viewPdfBtn">View PDF</button>
             </div>

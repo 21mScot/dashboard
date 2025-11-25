@@ -1,5 +1,5 @@
 # Version
 
-- Current release: v0.30.0
+- Current release: v0.30.1-alpha
 - Release date: 2025-11-25
-- Highlights: Hashprice now estimated from blockchain.info hashrate (FOSS) with a static fallback; BTC network sidebar combines price/hashprice and drops unused difficulty/subsidy/height rows.
+- Highlights: Sidebar static-mode messaging now spells out “USD/GBP exchange rate” alongside BTC price and hashprice.
