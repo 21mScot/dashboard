@@ -4,6 +4,10 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.21.5] - 2025-11-25
+### Added
+- Introduced a “Learn about Bitcoin” tab with curated, UX-friendly expanders covering energy use, mining mechanics, and recommended reading paths.
+
 ## [v0.21.4] - 2025-11-24
 ### Changed
 - Synced production miner catalogue to the latest supplier spreadsheet and retained the previous set in `PREVIOUS_MINERS` for manual comparison.
@@ -82,7 +86,11 @@ All notable changes will be documented in this file.
 - `black` / `ruff` pre-commit hooks
 - Manual Streamlit UI smoke test (scenarios + miner selection)
 
-[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.21.1...HEAD
+[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.21.5...HEAD
+[v0.21.5]: https://github.com/21mScot/dashboard/releases/tag/v0.21.5
+[v0.21.4]: https://github.com/21mScot/dashboard/releases/tag/v0.21.4
+[v0.21.3]: https://github.com/21mScot/dashboard/releases/tag/v0.21.3
+[v0.21.2]: https://github.com/21mScot/dashboard/releases/tag/v0.21.2
 [v0.21.1]: https://github.com/21mScot/dashboard/releases/tag/v0.21.1
 [v0.21.0]: https://github.com/21mScot/dashboard/releases/tag/v0.21.0
 [v0.20.0]: https://github.com/21mScot/dashboard/releases/tag/v0.20.0
