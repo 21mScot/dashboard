@@ -57,6 +57,7 @@ from src.ui.charts import (
     render_unified_forecast_chart,
 )
 from src.ui.forecast_types import BTCForecastContext, FiatForecastContext
+from src.ui.learn_bitcoin import render_learn_about_bitcoin
 from src.ui.miner_selection import (
     get_current_selected_miner,
     load_miner_options,
@@ -573,10 +574,11 @@ def render_dashboard() -> None:
     # ---------------------------------------------------------
     # TABS
     # ---------------------------------------------------------
-    tab_overview, tab_scenarios, tab_assumptions, tab_faq = st.tabs(
+    tab_overview, tab_scenarios, tab_learn, tab_assumptions, tab_faq = st.tabs(
         [
             "📊 Overview",
             "🎯 Scenarios & Risk",
+            "📚 Learn about Bitcoin",
             "📋 Assumptions & Methodology",
             "❓ FAQ: Choosing your ASIC",
         ]
@@ -1656,6 +1658,12 @@ def render_dashboard() -> None:
                 usd_to_gbp=network_data.usd_to_gbp,
                 go_live_date=site_inputs.go_live_date,
             )
+
+    # ---------------------------------------------------------
+    # LEARN TAB
+    # ---------------------------------------------------------
+    with tab_learn:
+        render_learn_about_bitcoin()
 
     # ---------------------------------------------------------
     # ASSUMPTIONS TAB
