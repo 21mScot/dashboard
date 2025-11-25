@@ -290,6 +290,7 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
     static_diff = settings.DEFAULT_NETWORK_DIFFICULTY
     static_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
     static_usd_to_gbp = settings.DEFAULT_USD_TO_GBP
+    static_hashprice = settings.DEFAULT_HASHPRICE_USD_PER_PH_DAY
 
     # Explicitly static
     if not use_live:
@@ -300,8 +301,8 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
             as_of_utc=datetime.now(timezone.utc),
-            hashprice_usd_per_ph_day=None,
-            hashprice_as_of_utc=None,
+            hashprice_usd_per_ph_day=float(static_hashprice),
+            hashprice_as_of_utc=datetime.now(timezone.utc),
         )
         return static_data, False
 
@@ -319,7 +320,8 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             f"- BTC price (USD): `${static_price:,.0f}`\n"
             f"- Difficulty: `{static_diff:,}`\n"
             f"- Block subsidy: `{static_subsidy} BTC`\n"
-            f"- USD/GBP FX: `{static_usd_to_gbp:.3f}`\n\n"
+            f"- USD/GBP FX: `{static_usd_to_gbp:.3f}`\n"
+            f"- Hashprice: `${static_hashprice:,.2f} / PH/s / day`\n\n"
             "<details>\n"
             "<summary><strong>Technical details</strong></summary>\n\n"
             "```text\n"
@@ -335,8 +337,8 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
             as_of_utc=datetime.now(timezone.utc),
-            hashprice_usd_per_ph_day=None,
-            hashprice_as_of_utc=None,
+            hashprice_usd_per_ph_day=float(static_hashprice),
+            hashprice_as_of_utc=datetime.now(timezone.utc),
         )
         return static_data, False
 
@@ -350,8 +352,8 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
             as_of_utc=datetime.now(timezone.utc),
-            hashprice_usd_per_ph_day=None,
-            hashprice_as_of_utc=None,
+            hashprice_usd_per_ph_day=float(static_hashprice),
+            hashprice_as_of_utc=datetime.now(timezone.utc),
         )
         return static_data, False
 
@@ -522,27 +524,29 @@ def render_dashboard() -> None:
     if is_live:
         st.sidebar.success("Using LIVE BTC network data")
     elif requested_live:
-        st.sidebar.info("Using static BTC price and difficulty (live unavailable).")
+        st.sidebar.info("Using static BTC price and hashprice (live unavailable).")
     else:
-        st.sidebar.info("Using static BTC price and difficulty (live disabled).")
+        st.sidebar.info("Using static BTC price and hashprice (live disabled).")
 
     data_timestamp_utc = (
         network_data.as_of_utc.strftime("%Y-%m-%d %H:%M UTC")
         if network_data.as_of_utc
         else "N/A"
     )
-    hashprice_timestamp_utc = (
-        network_data.hashprice_as_of_utc.strftime("%Y-%m-%d %H:%M UTC")
-        if getattr(network_data, "hashprice_as_of_utc", None)
-        else data_timestamp_utc
-    )
     page_render_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     with st.sidebar.expander("BTC network data in use", expanded=True):
         st.metric("BTC price (USD)", f"${network_data.btc_price_usd:,.0f}")
-        st.metric("Difficulty", format_engineering(network_data.difficulty))
-        st.metric("Block subsidy", f"{network_data.block_subsidy_btc} BTC")
-        st.metric("Block height", network_data.block_height or "N/A")
+        hashprice_val = getattr(network_data, "hashprice_usd_per_ph_day", None)
+        if hashprice_val is not None:
+            st.metric(
+                "Hashprice (est.)",
+                f"${hashprice_val:,.2f} / PH/s / day",
+                help=(
+                    "Estimated hashprice (USD per PH/s per day) computed from "
+                    "blockchain.info hashrate, BTC price, and block subsidy."
+                ),
+            )
         st.caption("These values drive all BTC/day and revenue calculations.")
         st.caption(f"Data timestamp (UTC): {data_timestamp_utc}")
         st.caption(f"Page render time (UTC): {page_render_utc}")
@@ -551,25 +555,6 @@ def render_dashboard() -> None:
         st.metric("USD/GBP exchange rate", f"${network_data.usd_to_gbp:.3f}")
         st.caption("This value drives all the USD to GBP currency conversions.")
         st.caption(f"Data timestamp (UTC): {data_timestamp_utc}")
-        st.caption(f"Page render time (UTC): {page_render_utc}")
-
-    with st.sidebar.expander("Hashprice (Luxor)", expanded=True):
-        hashprice_val = getattr(network_data, "hashprice_usd_per_ph_day", None)
-        if hashprice_val is not None:
-            st.metric(
-                "Hashprice",
-                f"${hashprice_val:,.2f} / PH/s / day",
-                help=(
-                    "Luxor hashprice in USD per PH/s per day. "
-                    "hashrate-index API source."
-                ),
-            )
-            st.caption(f"Data timestamp (UTC): {hashprice_timestamp_utc}")
-        else:
-            st.info(
-                "Hashprice unavailable right now (Luxor endpoint), showing N/A. "
-                "BTC/d calculations still use difficulty & subsidy."
-            )
         st.caption(f"Page render time (UTC): {page_render_utc}")
 
     # ---------------------------------------------------------

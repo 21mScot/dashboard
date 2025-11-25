@@ -142,34 +142,21 @@ def _fetch_usd_to_gbp_rate() -> tuple[float, datetime]:
             return float(settings.DEFAULT_USD_TO_GBP), datetime.now(timezone.utc)
 
 
-def _fetch_hashprice_usd_per_ph_day() -> tuple[Optional[float], Optional[datetime]]:
+def _fetch_network_hashrate_ph() -> tuple[Optional[float], Optional[datetime]]:
     """
-    Fetch Luxor Hashprice (USD per PH/s per day).
-
-    This is informational only; failures should not block the dashboard.
+    Fetch network hashrate (PH/s) from blockchain.info.
     """
     try:
         resp = requests.get(
-            settings.HASHRATEINDEX_HASHPRICE_URL,
+            settings.BLOCKCHAIN_HASHRATE_URL,
             headers={"User-Agent": settings.LIVE_DATA_USER_AGENT},
             timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
         )
         resp.raise_for_status()
-        data = resp.json()
-        usd = data.get("usd")
-        ts_raw = data.get("timestamp") or data.get("time") or data.get("updatedAt")
-
-        ts: Optional[datetime] = None
-        if isinstance(ts_raw, (int, float)):
-            ts = datetime.fromtimestamp(ts_raw, tz=timezone.utc)
-        elif isinstance(ts_raw, str):
-            # Try ISO string with/without Z
-            try:
-                ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
-            except Exception:
-                ts = None
-
-        return (float(usd) if usd is not None else None), ts
+        # blockchain.info/q/hashrate returns GH/s
+        gh_per_s = float(resp.text.strip())
+        ph_per_s = gh_per_s / 1_000_000.0
+        return ph_per_s, datetime.now(timezone.utc)
     except Exception:
         return None, None
 
@@ -191,11 +178,20 @@ def get_live_network_data() -> NetworkData:
         price, price_ts = _fetch_btc_price_usd()
         difficulty, height, diff_ts = _fetch_difficulty_and_height()
         usd_to_gbp, fx_ts = _fetch_usd_to_gbp_rate()
-        hashprice_usd_per_ph_day, hashprice_ts = _fetch_hashprice_usd_per_ph_day()
+        hashrate_ph, hashrate_ts = _fetch_network_hashrate_ph()
     except Exception as exc:
         raise LiveDataError(f"Failed to fetch live data: {exc}") from exc
 
-    timestamps = [ts for ts in (price_ts, diff_ts, fx_ts, hashprice_ts) if ts]
+    # Hashprice approximation from hashrate: network USD revenue per PH/s per day.
+    hashprice_usd_per_ph_day: Optional[float] = None
+    if hashrate_ph and hashrate_ph > 0:
+        blocks_per_day = 144  # average blocks per day
+        gross_rev_usd_per_day = (
+            blocks_per_day * settings.DEFAULT_BLOCK_SUBSIDY_BTC * price
+        )
+        hashprice_usd_per_ph_day = gross_rev_usd_per_day / hashrate_ph
+
+    timestamps = [ts for ts in (price_ts, diff_ts, fx_ts, hashrate_ts) if ts]
     as_of_utc = max(timestamps) if timestamps else datetime.now(timezone.utc)
 
     return NetworkData(
@@ -206,5 +202,5 @@ def get_live_network_data() -> NetworkData:
         block_height=height,
         as_of_utc=as_of_utc,
         hashprice_usd_per_ph_day=hashprice_usd_per_ph_day,
-        hashprice_as_of_utc=hashprice_ts,
+        hashprice_as_of_utc=hashrate_ts,
     )

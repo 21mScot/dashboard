@@ -4,6 +4,12 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.3.0-alpha] - 2025-11-25
+### Added
+- Estimated hashprice now computed from blockchain.info hashrate, BTC price, and block subsidy (FOSS source), replacing the paid HashrateIndex endpoint and providing a static fallback value.
+### Changed
+- Streamlined sidebar: BTC price and hashprice appear together; difficulty/subsidy/height removed from the network expander; static-mode messaging now references hashprice.
+
 ## [v0.21.6] - 2025-11-26
 ### Fixed
 - PDF export controls now render via a Streamlit component so the “View PDF” action works reliably; removed the non-functioning print button.
