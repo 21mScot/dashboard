@@ -12,12 +12,19 @@ DEV_DEFAULT_UPTIME_PCT = 98
 DEV_MINER_SET = os.getenv("DEV_MINER_SET", "chatgpt_test").lower()
 
 # --- Live data / network constants ---
-
+# Blockchain.info - est. 2011, Ben Reeves (UK), now Blockchain.com (not FOSS)
+# Mempool.space - est. 2020, Self-hostable open-source Bitcoin explorer, Wiz, Asia
+# Blockstream.com - est. 2014, Adam Back, (not fully FOSS, but Blockstream.Espora is)
+# Bitcoinlib (Python): FOSS lib, Rene Hartevelt (Amsterdam)
 MEMPOOL_BLOCKTIP_URL = "https://mempool.space/api/v1/blocks/tip-height"
 BLOCKCHAIN_DIFFICULTY_URL = "https://blockchain.info/q/getdifficulty"
 BLOCKCHAIN_HASHRATE_URL = "https://blockchain.info/q/hashrate"
+BLOCKCHAIN_HASHRATE_7D_URL = (
+    "https://blockchain.info/charts/hash-rate?timespan=7days&format=json"
+)
 COINGECKO_SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
-HASHRATEINDEX_HASHPRICE_URL = "https://api.hashrateindex.com/api/v1/public/hashprice"
+# Only available through paid subscription
+# HASHRATEINDEX_HASHPRICE_URL = "https://api.hashrateindex.com/api/v1/public/hashprice"
 DEFAULT_HASHPRICE_USD_PER_PH_DAY = 40.0
 
 # Requests / caching config
@@ -72,7 +79,7 @@ HALVING_INTERVAL_YEARS = 4
 NEXT_HALVING_DATE = (2028, 4, 1)  # YYYY, M, D
 
 # Block fees (base) for forward projections
-DEFAULT_FEE_BTC_PER_BLOCK = 0.0005
+DEFAULT_FEE_BTC_PER_BLOCK = 0.025
 
 # UI defaults for forecast sliders (expressed as %)
 DEFAULT_HASHRATE_GROWTH_PCT = 5
