@@ -20,6 +20,7 @@ class NetworkData:
     difficulty: float
     block_subsidy_btc: float
     usd_to_gbp: float
+    network_hashrate_ph: Optional[float] = None
     block_height: Optional[int] = None
     as_of_utc: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     hashprice_usd_per_ph_day: Optional[float] = None
@@ -144,8 +145,28 @@ def _fetch_usd_to_gbp_rate() -> tuple[float, datetime]:
 
 def _fetch_network_hashrate_ph() -> tuple[Optional[float], Optional[datetime]]:
     """
-    Fetch network hashrate (PH/s) from blockchain.info.
+    Fetch network hashrate (PH/s), preferring a 7-day average.
     """
+    # Try 7d chart (hashes per second)
+    try:
+        resp = requests.get(
+            settings.BLOCKCHAIN_HASHRATE_7D_URL,
+            headers={"User-Agent": settings.LIVE_DATA_USER_AGENT},
+            timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        values = data.get("values") or []
+        if values:
+            last = values[-1]
+            y = last.get("y")
+            if y is not None:
+                ph_per_s = float(y) / 1_000_000_000_000_000.0  # hashes/s → PH/s
+                return ph_per_s, datetime.now(timezone.utc)
+    except Exception:
+        pass
+
+    # Fallback: 24h average GH/s endpoint
     try:
         resp = requests.get(
             settings.BLOCKCHAIN_HASHRATE_URL,
@@ -153,7 +174,6 @@ def _fetch_network_hashrate_ph() -> tuple[Optional[float], Optional[datetime]]:
             timeout=settings.LIVE_DATA_REQUEST_TIMEOUT_S,
         )
         resp.raise_for_status()
-        # blockchain.info/q/hashrate returns GH/s
         gh_per_s = float(resp.text.strip())
         ph_per_s = gh_per_s / 1_000_000.0
         return ph_per_s, datetime.now(timezone.utc)
@@ -186,9 +206,10 @@ def get_live_network_data() -> NetworkData:
     hashprice_usd_per_ph_day: Optional[float] = None
     if hashrate_ph and hashrate_ph > 0:
         blocks_per_day = 144  # average blocks per day
-        gross_rev_usd_per_day = (
-            blocks_per_day * settings.DEFAULT_BLOCK_SUBSIDY_BTC * price
+        block_reward_btc = (
+            settings.DEFAULT_BLOCK_SUBSIDY_BTC + settings.DEFAULT_FEE_BTC_PER_BLOCK
         )
+        gross_rev_usd_per_day = blocks_per_day * block_reward_btc * price
         hashprice_usd_per_ph_day = gross_rev_usd_per_day / hashrate_ph
 
     timestamps = [ts for ts in (price_ts, diff_ts, fx_ts, hashrate_ts) if ts]
@@ -201,6 +222,7 @@ def get_live_network_data() -> NetworkData:
         usd_to_gbp=usd_to_gbp,
         block_height=height,
         as_of_utc=as_of_utc,
+        network_hashrate_ph=hashrate_ph,
         hashprice_usd_per_ph_day=hashprice_usd_per_ph_day,
         hashprice_as_of_utc=hashrate_ts,
     )

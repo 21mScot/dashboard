@@ -291,6 +291,12 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
     static_subsidy = settings.DEFAULT_BLOCK_SUBSIDY_BTC
     static_usd_to_gbp = settings.DEFAULT_USD_TO_GBP
     static_hashprice = settings.DEFAULT_HASHPRICE_USD_PER_PH_DAY
+    static_block_reward_btc = static_subsidy + settings.DEFAULT_FEE_BTC_PER_BLOCK
+    static_hashrate_ph = (
+        (144 * static_block_reward_btc * static_price) / static_hashprice
+        if static_hashprice
+        else None
+    )
 
     # Explicitly static
     if not use_live:
@@ -300,6 +306,7 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             block_subsidy_btc=float(static_subsidy),
             usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
+            network_hashrate_ph=static_hashrate_ph,
             as_of_utc=datetime.now(timezone.utc),
             hashprice_usd_per_ph_day=float(static_hashprice),
             hashprice_as_of_utc=datetime.now(timezone.utc),
@@ -336,6 +343,7 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             block_subsidy_btc=float(static_subsidy),
             usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
+            network_hashrate_ph=static_hashrate_ph,
             as_of_utc=datetime.now(timezone.utc),
             hashprice_usd_per_ph_day=float(static_hashprice),
             hashprice_as_of_utc=datetime.now(timezone.utc),
@@ -351,6 +359,7 @@ def load_network_data(use_live: bool) -> tuple[NetworkData, bool]:
             block_subsidy_btc=float(static_subsidy),
             usd_to_gbp=float(static_usd_to_gbp),
             block_height=None,
+            network_hashrate_ph=static_hashrate_ph,
             as_of_utc=datetime.now(timezone.utc),
             hashprice_usd_per_ph_day=float(static_hashprice),
             hashprice_as_of_utc=datetime.now(timezone.utc),
@@ -540,15 +549,33 @@ def render_dashboard() -> None:
     page_render_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     with st.sidebar.expander("BTC network data in use", expanded=True):
-        st.metric("BTC price (USD)", f"${network_data.btc_price_usd:,.0f}")
+        st.metric(
+            "BTC price (USD)",
+            f"${network_data.btc_price_usd:,.0f}",
+            help=(
+                "The current market price of one bitcoin in US dollars. This value "
+                "updates live and drives all mining revenue calculations."
+            ),
+        )
+        if network_data.network_hashrate_ph is not None:
+            st.metric(
+                "Hashrate",
+                f"{network_data.network_hashrate_ph:,.0f} PH/s",
+                help=(
+                    "Total computational power securing the Bitcoin network (PH/s). "
+                    "Higher hashrate means more competition, slightly reducing BTC "
+                    "earned per PH/s. This is an estimate based on recent block times."
+                ),
+            )
         hashprice_val = getattr(network_data, "hashprice_usd_per_ph_day", None)
         if hashprice_val is not None:
             st.metric(
-                "Hashprice (est.)",
+                "Hashprice (realised)",
                 f"${hashprice_val:,.2f} / PH/s / day",
                 help=(
-                    "Estimated hashprice (USD per PH/s per day) computed from "
-                    "blockchain.info hashrate, BTC price, and block subsidy."
+                    "Estimated USD revenue earned per PH/s of hashrate per day, "
+                    "based on current BTC price, network difficulty, block rewards, "
+                    "and average transaction fees."
                 ),
             )
         st.caption("These values drive all BTC/day and revenue calculations.")
@@ -556,8 +583,15 @@ def render_dashboard() -> None:
         st.caption(f"Page render time (UTC): {page_render_utc}")
 
     with st.sidebar.expander("Foreign exchange rate", expanded=True):
-        st.metric("USD/GBP exchange rate", f"${network_data.usd_to_gbp:.3f}")
-        st.caption("This value drives all the USD to GBP currency conversions.")
+        st.metric(
+            "Live FX rate (USD→GBP)",
+            f"${network_data.usd_to_gbp:.3f}",
+            help=(
+                "The current exchange rate from US dollars to British pounds. "
+                "Used to convert all mining revenue (USD) into GBP for forecasts. "
+                "A stronger USD increases GBP revenue; a weaker USD reduces it."
+            ),
+        )
         st.caption(f"Data timestamp (UTC): {data_timestamp_utc}")
         st.caption(f"Page render time (UTC): {page_render_utc}")
 
@@ -1843,9 +1877,10 @@ def render_dashboard() -> None:
             )
         )
 
-    st.markdown("---")
+    #    st.markdown("---")
 
     render_pdf_download_section()
+
     render_footer()
 
 
@@ -2260,33 +2295,49 @@ def render_pdf_download_section() -> None:
     components.html(
         f"""
         <style>
+        .pdf-section {{
+            border-top: 1px solid #e5e7eb;
+            padding: 6px 0 2px 0;
+            margin: 10px 0 0 0;
+            font-family: "Source Sans Pro", Arial, sans-serif;
+            color: #111827;
+        }}
+        .pdf-heading {{
+            margin: 0;
+            font-size: 1.125rem;
+            font-weight: 600;
+        }}
+        .pdf-row {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            min-height: 44px;
+        }}
         .pdf-actions {{
             display: flex;
             gap: 0.5rem;
         }}
         .pdf-actions button {{
-            background-color: #f2f2f2;
-            color: #1f1f1f;
-            border: 1px solid #d0d0d0;
-            border-radius: 0.25rem;
-            padding: 0.35rem 0.9rem;
+            background-color: #f3f4f6;
+            color: #111827;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            padding: 0.45rem 0.95rem;
             font-weight: 600;
             cursor: pointer;
             min-width: 120px;
         }}
         .pdf-actions button:hover {{
-            background-color: #e5e5e5;
+            background-color: #e5e7eb;
         }}
         </style>
-        <div style="
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            gap:1rem;
-        ">
-            <h3 style="margin:0;">Your proposal for a 21.Scot data centre</h3>
-            <div class="pdf-actions">
-                <button id="viewPdfBtn">View PDF</button>
+        <div class="pdf-section">
+            <div class="pdf-row">
+                <p class="pdf-heading">Your proposal for a 21Scot data centre</p>
+                <div class="pdf-actions">
+                    <button id="viewPdfBtn">View PDF</button>
+                </div>
             </div>
         </div>
         <script>
@@ -2308,5 +2359,5 @@ def render_pdf_download_section() -> None:
             }};
         </script>
         """,
-        height=100,
+        height=80,
     )

@@ -4,6 +4,12 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.2-alpha] - 2025-11-25
+### Added
+- Sidebar tooltips for BTC price, network hashrate, and realised hashprice; clarified FX label and help text.
+### Changed
+- PDF footer styling refined to align with the rest of the layout and reduce whitespace.
+
 ## [v0.30.1-alpha] - 2025-11-25
 ### Changed
 - Sidebar static-mode messaging now explicitly names the USD/GBP exchange rate alongside BTC price and hashprice.
@@ -100,7 +106,8 @@ All notable changes will be documented in this file.
 - `black` / `ruff` pre-commit hooks
 - Manual Streamlit UI smoke test (scenarios + miner selection)
 
-[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.30.1-alpha...HEAD
+[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.30.2-alpha...HEAD
+[v0.30.2-alpha]: https://github.com/21mScot/dashboard/releases/tag/v0.30.2-alpha
 [v0.30.1-alpha]: https://github.com/21mScot/dashboard/releases/tag/v0.30.1-alpha
 [v0.30.0]: https://github.com/21mScot/dashboard/releases/tag/v0.30.0
 [v0.21.6]: https://github.com/21mScot/dashboard/releases/tag/v0.21.6
