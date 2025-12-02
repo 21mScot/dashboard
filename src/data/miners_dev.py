@@ -86,6 +86,13 @@ def get_dev_catalogue(
 ) -> Tuple[Dict[str, MinerOption], set[str]]:
     """Return the requested dev miner catalogue and any immediate-access set."""
     normalized = (key or "").strip().lower()
+    if normalized == "prod":
+        # Allow dev environments to surface the full production catalogue.
+        from src.data import miners_prod
+
+        return miners_prod.MINERS, getattr(
+            miners_prod, "IMMEDIATE_ACCESS_MODELS", set()
+        )
     if normalized == "chatgpt_test":
         return CHATGPT_TEST_MINERS, CHATGPT_TEST_IMMEDIATE
     # default to legacy validation set

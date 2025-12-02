@@ -833,6 +833,7 @@ def render_dashboard() -> None:
                     hashrate_th=selected_miner.hashrate_th,
                     network=network_data,
                 )
+                btc_per_day = econ_single.btc_per_day * uptime_factor
                 usd_to_gbp = network_data.usd_to_gbp or 1.0
                 revenue_gbp_per_day = (
                     econ_single.revenue_usd_per_day * usd_to_gbp * uptime_factor
@@ -1001,13 +1002,13 @@ def render_dashboard() -> None:
                         with top1:
                             st.metric(
                                 "Net income per ASIC / day",
-                                f"£{net_gbp_per_day:,.0f}",
+                                f"£{net_gbp_per_day:,.2f}",
                                 help="Gross revenue minus electricity cost for one miner.",
                             )
                         with top2:
                             st.metric(
                                 "Gross revenue / ASIC / day",
-                                f"£{revenue_gbp_per_day:,.0f}",
+                                f"£{revenue_gbp_per_day:,.2f}",
                                 help=(
                                     "Revenue for one miner per day at your uptime, using "
                                     "the current BTC price, difficulty and block subsidy."
@@ -1016,7 +1017,7 @@ def render_dashboard() -> None:
                         with top3:
                             st.metric(
                                 "Power cost / ASIC / day",
-                                f"£{power_cost_gbp_per_day:,.0f}",
+                                f"£{power_cost_gbp_per_day:,.2f}",
                                 help=(
                                     "Electricity cost for one miner per day including any "
                                     "cooling/overhead load and your £/kWh input."
@@ -1093,6 +1094,14 @@ def render_dashboard() -> None:
                                 "Power cost / ASIC / day (USD)",
                                 power_usd_display,
                                 help="Electricity cost per miner per day in USD, using your £/kWh input and FX.",
+                            )
+
+                        fourth1, _, _ = st.columns(3)
+                        with fourth1:
+                            st.metric(
+                                "BTC mined per ASIC / day",
+                                f"{btc_per_day:.6f} BTC",
+                                help="Estimated BTC produced by one miner per day at your uptime.",
                             )
 
                         st.caption(

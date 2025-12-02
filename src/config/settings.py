@@ -8,8 +8,8 @@ from src.config.env import APP_ENV
 DEV_DEFAULT_SITE_POWER_KW = 1000
 DEV_DEFAULT_POWER_PRICE_GBP_PER_KWH = 0.045
 DEV_DEFAULT_UPTIME_PCT = 98
-# Dev-only miner catalogue selector: "legacy_wtm" or "chatgpt_test"
-DEV_MINER_SET = os.getenv("DEV_MINER_SET", "chatgpt_test").lower()
+# Dev-only miner catalogue selector: "legacy_wtm", "chatgpt_test", or "prod"
+DEV_MINER_SET = os.getenv("DEV_MINER_SET", "prod").lower()
 
 # --- Live data / network constants ---
 # Blockchain.info - est. 2011, Ben Reeves (UK), now Blockchain.com (not FOSS)
