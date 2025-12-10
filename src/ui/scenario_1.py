@@ -360,6 +360,61 @@ def _render_capex_breakdown(
         )
 
 
+def _render_capex_debugging(
+    result: ScenarioResult,
+    capex_breakdown: Optional[CapexBreakdown],
+) -> None:
+    """
+    Debugging view to quickly sanity-check CapEx inputs vs scenario totals.
+    """
+
+    if capex_breakdown is None or capex_breakdown.total_gbp == 0:
+        st.info("CapEx assumptions are missing, so there's nothing to debug yet.")
+        return
+
+    model_total = capex_breakdown.total_gbp
+    scenario_total = result.total_capex_gbp
+    delta_gbp = scenario_total - model_total
+    delta_pct = (delta_gbp / model_total * 100.0) if model_total else None
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("ASIC count", f"{getattr(capex_breakdown, 'asic_count', 0):,}")
+    with col2:
+        st.metric("Model total (GBP)", _format_currency(model_total))
+    with col3:
+        st.metric("Scenario total (GBP)", _format_currency(scenario_total))
+    with col4:
+        st.metric(
+            "Delta vs model",
+            _format_currency(delta_gbp),
+            delta=(
+                f"{delta_pct:+.1f}%"
+                if delta_pct is not None and not math.isinf(delta_pct)
+                else "N/A"
+            ),
+        )
+
+    st.caption("Raw CapEx components (GBP)")
+    st.json(
+        {
+            "asic_cost_gbp": capex_breakdown.asic_cost_gbp,
+            "shipping_gbp": capex_breakdown.shipping_gbp,
+            "import_duty_gbp": capex_breakdown.import_duty_gbp,
+            "spares_gbp": capex_breakdown.spares_gbp,
+            "racking_gbp": capex_breakdown.racking_gbp,
+            "cables_gbp": capex_breakdown.cables_gbp,
+            "switchgear_gbp": capex_breakdown.switchgear_gbp,
+            "networking_gbp": capex_breakdown.networking_gbp,
+            "installation_labour_gbp": capex_breakdown.installation_labour_gbp,
+            "certification_gbp": capex_breakdown.certification_gbp,
+            "model_total_gbp": model_total,
+            "scenario_total_gbp": scenario_total,
+            "asic_count": getattr(capex_breakdown, "asic_count", 0),
+        }
+    )
+
+
 def render_scenario_panel(
     result: ScenarioResult,
     capex_breakdown: Optional[CapexBreakdown] = None,
@@ -397,3 +452,6 @@ def render_scenario_panel(
     # Renamed: "CapEx breakdown"
     with st.expander("CapEx breakdown...", expanded=False):
         _render_capex_breakdown(result, capex_breakdown)
+
+    with st.expander("CapEx debugging...", expanded=False):
+        _render_capex_debugging(result, capex_breakdown)

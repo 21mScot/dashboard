@@ -642,6 +642,7 @@ def render_dashboard() -> None:
         if site_metrics.asics_supported > 0:
             capex_breakdown = compute_capex_breakdown(
                 site_metrics.asics_supported,
+                miner_price_usd=getattr(selected_miner, "price_usd", None),
                 usd_to_gbp=network_data.usd_to_gbp,
             )
         else:

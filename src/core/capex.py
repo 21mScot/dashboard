@@ -16,6 +16,7 @@ class CapexBreakdown:
     supplied FX rate when computing.
     """
 
+    asic_count: int
     asic_cost_gbp: float
     shipping_gbp: float
     import_duty_gbp: float
@@ -45,13 +46,15 @@ class CapexBreakdown:
 
 def compute_capex_breakdown(
     asic_count: int,
+    miner_price_usd: float | None = None,
     usd_to_gbp: float | None = None,
 ) -> CapexBreakdown:
     """
     Compute a model-based CapEx breakdown for the given ASIC count.
 
-    Uses constants from settings.py for ASIC pricing, infrastructure,
-    and installation, and converts from USD to GBP.
+    Uses constants from settings.py for infrastructure and installation.
+    Miner price can be provided from the UI; otherwise the default in
+    settings.py is used. All values are converted from USD to GBP.
     """
 
     if usd_to_gbp is None:
@@ -60,6 +63,7 @@ def compute_capex_breakdown(
     if asic_count <= 0:
         # Return an all-zero breakdown so the UI can still render safely.
         return CapexBreakdown(
+            asic_count=0,
             asic_cost_gbp=0.0,
             shipping_gbp=0.0,
             import_duty_gbp=0.0,
@@ -73,7 +77,8 @@ def compute_capex_breakdown(
         )
 
     # --- ASIC-related costs (USD) ---
-    asic_price_usd = settings.ASIC_PRICE_USD * asic_count
+    unit_price_usd = miner_price_usd or settings.ASIC_PRICE_USD
+    asic_price_usd = unit_price_usd * asic_count
     shipping_usd = settings.ASIC_SHIPPING_USD * asic_count
     import_duty_usd = asic_price_usd * settings.ASIC_IMPORT_DUTY_RATE
     spares_usd = asic_price_usd * settings.ASIC_SPARES_RATE
@@ -95,6 +100,7 @@ def compute_capex_breakdown(
         return value_usd * usd_to_gbp
 
     return CapexBreakdown(
+        asic_count=asic_count,
         asic_cost_gbp=to_gbp(asic_price_usd),
         shipping_gbp=to_gbp(shipping_usd),
         import_duty_gbp=to_gbp(import_duty_usd),
