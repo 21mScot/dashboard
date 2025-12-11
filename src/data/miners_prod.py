@@ -51,6 +51,14 @@ PREVIOUS_MINERS: Dict[str, MinerOption] = {
 
 # Production catalogue: synced with co-founder spreadsheet.
 MINERS: Dict[str, MinerOption] = {
+    "M79S (1350 TH/s)": MinerOption(
+        name="M79S - Hydro",
+        hashrate_th=1350.0,
+        power_w=20000,
+        efficiency_j_per_th=7.9,
+        supplier="MicroBT",
+        price_usd=17200.0,
+    ),
     "M33 H++ (242 TH/s)": MinerOption(
         name="M33 H++",
         hashrate_th=242.0,
