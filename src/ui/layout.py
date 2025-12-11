@@ -907,7 +907,7 @@ def render_dashboard() -> None:
                     miners_df=miners_df,
                     site_power_kw=site_inputs.site_power_kw,
                     elec_price_gbp_per_kwh=site_inputs.electricity_cost,
-                    load_factor=uptime_factor,
+                    uptime_factor=uptime_factor,
                     btc_revenue_gbp_per_ths_per_day=btc_revenue_gbp_per_ths_per_day,
                 )
 
@@ -951,9 +951,13 @@ def render_dashboard() -> None:
                         )
                         if rec_row is not None:
                             st.success(
-                                f"Recommended miner: **{rec_row['miner_name']}** — "
+                                f'Recommended miner[?](# "Ranks miners with positive margin by: '
+                                f"1) fastest payback within the project horizon, "
+                                f"2) highest site daily margin, "
+                                f'3) best efficiency (lowest J/TH).") '
+                                f"**{rec_row['miner_name']}** — "
                                 f"{int(rec_row['max_units_by_power'])} units, "
-                                f"≈ £{rec_row['site_daily_margin_gbp']:.0f}/day, "
+                                f"≈ £{rec_row['site_daily_margin_gbp']:,.0f}/day, "
                                 f"payback ≈ {rec_row['payback_days']:.0f} days."
                             )
                         else:

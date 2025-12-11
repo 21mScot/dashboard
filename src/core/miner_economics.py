@@ -83,7 +83,7 @@ def compute_miner_economics_table(
     miners_df: pd.DataFrame,
     site_power_kw: float,
     elec_price_gbp_per_kwh: float,
-    load_factor: float,
+    uptime_factor: float,
     btc_revenue_gbp_per_ths_per_day: float,
 ) -> pd.DataFrame:
     """
@@ -91,15 +91,17 @@ def compute_miner_economics_table(
     """
     df = miners_df.copy()
 
-    df["max_units_by_power"] = np.floor(
-        (site_power_kw * load_factor) / df["power_kw"]
-    ).astype(int)
+    # Capacity view: use full nameplate count; uptime is applied to revenue/cost,
+    # not capacity.
+    df["max_units_by_power"] = np.floor(site_power_kw / df["power_kw"]).astype(int)
 
     df["revenue_gbp_per_unit_per_day"] = (
-        df["hashrate_ths"] * btc_revenue_gbp_per_ths_per_day
+        df["hashrate_ths"] * btc_revenue_gbp_per_ths_per_day * uptime_factor
     )
 
-    df["elec_cost_gbp_per_unit_per_day"] = df["power_kw"] * 24 * elec_price_gbp_per_kwh
+    df["elec_cost_gbp_per_unit_per_day"] = (
+        df["power_kw"] * 24 * elec_price_gbp_per_kwh * uptime_factor
+    )
 
     df["margin_gbp_per_unit_per_day"] = (
         df["revenue_gbp_per_unit_per_day"] - df["elec_cost_gbp_per_unit_per_day"]
