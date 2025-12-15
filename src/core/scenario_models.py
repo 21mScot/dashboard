@@ -36,15 +36,18 @@ class ScenarioConfig:
     Configuration parameters for a scenario.
 
     Shared between the scenario config factory (base/best/worst defaults)
-    and the calculation engine. All percentage fields are expressed as
-    fractions, e.g. +20% = 0.20, -10% = -0.10.
+    and the calculation engine. price_pct and electricity_pct are expressed
+    as fractions (e.g. +0.20 = +20%), while difficulty_level_shock_pct is
+    expressed as a whole percentage (e.g. +20.0 = 20% harder).
     """
 
     name: str
 
     # Shocks relative to base assumptions
     price_pct: float  # +0.20 = +20% BTC price
-    difficulty_pct: float  # +0.20 = +20% harder network
+    difficulty_level_shock_pct: (
+        float  # +20.0 = 20% harder difficulty level (BTC / 1.20)
+    )
     electricity_pct: float  # +0.20 = +20% electricity cost
 
     # Revenue share going to the client (AD operator).

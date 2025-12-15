@@ -76,7 +76,7 @@ def test_run_scenario_applies_expected_shocks(sample_site_metrics: SiteMetrics):
     cfg = ScenarioConfig(
         name="Client share 85%",
         price_pct=0.15,
-        difficulty_pct=0.10,
+        difficulty_level_shock_pct=10.0,
         electricity_pct=0.20,
         client_revenue_share=0.85,
     )
@@ -95,7 +95,7 @@ def test_run_scenario_applies_expected_shocks(sample_site_metrics: SiteMetrics):
     assert len(result.years) == 3
 
     base = base_years[0]
-    btc_per_year = base.btc_mined * (1.0 - cfg.difficulty_pct)
+    btc_per_year = base.btc_mined / 1.10
     price_usd = base.btc_price_usd * (1.0 + cfg.price_pct)
     revenue_gbp = btc_per_year * price_usd * usd_to_gbp
     electricity_gbp = base.electricity_cost_gbp * (1.0 + cfg.electricity_pct)

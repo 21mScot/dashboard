@@ -32,7 +32,7 @@ def test_forecast_respects_halving_and_duration():
         project_years=1,
         fee_growth_pct_per_year=0.0,
         base_fee_btc_per_block=0.0,
-        hashrate_growth_pct_per_year=0.0,
+        difficulty_growth_pct_per_year=0.0,
     )
     assert len(rows) == 12
     # After halving date (2028-04-01 default), subsidy should halve

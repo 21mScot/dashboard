@@ -92,7 +92,7 @@ def run_scenario(
     result_cfg = ScenarioConfig(
         name=name,
         price_pct=cfg.price_pct,
-        difficulty_pct=cfg.difficulty_pct,
+        difficulty_level_shock_pct=cfg.difficulty_level_shock_pct,
         electricity_pct=cfg.electricity_pct,
         client_revenue_share=cfg.client_revenue_share,
     )
