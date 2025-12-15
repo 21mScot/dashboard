@@ -196,15 +196,20 @@ def render_heat_and_incentives(site_power_kw: float, load_factor: float) -> None
     if base_result.hint_required:
         st.info("Enter site power and uptime to estimate RHI uplift.")
 
-    st.markdown("#### Scenario-ready uplift")
-    sc_cols = st.columns(3)
-    for idx, label in enumerate(["Worst", "Base", "Best"]):
-        res = scenario_results[label]
-        with sc_cols[idx]:
-            st.metric(
-                f"{label} case uplift",
-                _format_currency_per_year(res.rhi_uplift_gbp_per_year),
-            )
+    with st.expander("View indicative RHI range", expanded=False):
+        st.caption(
+            "Indicative RHI range (auto-assumed). "
+            "Range based on conservative, default, and optimistic assumptions for "
+            "utilisable heat and marginal RHI tariff. No additional inputs required."
+        )
+        sc_cols = st.columns(3)
+        for idx, label in enumerate(["Worst", "Base", "Best"]):
+            res = scenario_results[label]
+            with sc_cols[idx]:
+                st.metric(
+                    f"{label} case uplift",
+                    _format_currency_per_year(res.rhi_uplift_gbp_per_year),
+                )
 
     target_uplift = 22000.0
     target_delta_q, target_power_kw = _compute_required_power_kw(
