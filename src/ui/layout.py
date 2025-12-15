@@ -58,6 +58,10 @@ from src.ui.charts import (
     render_unified_forecast_chart,
 )
 from src.ui.forecast_types import BTCForecastContext, FiatForecastContext
+from src.ui.heat_incentives import (
+    compute_rhi_scenarios,
+    render_heat_and_incentives,
+)
 from src.ui.learn_bitcoin import render_learn_about_bitcoin
 from src.ui.miner_selection import (
     get_current_selected_miner,
@@ -469,6 +473,8 @@ def _build_scenario_results_snapshot(
     go_live_date,
     total_capex_gbp: float | None = None,
     monthly_rows: list | None = None,
+    site_power_kw: float | None = None,
+    load_factor: float | None = None,
 ):
     project_years = _derive_project_years(site_metrics)
     if total_capex_gbp is None:
@@ -500,6 +506,10 @@ def _build_scenario_results_snapshot(
     scenarios_cfg = build_default_scenarios(
         client_share_override=client_share_pct / 100.0,
     )
+    rhi_scenarios = compute_rhi_scenarios(
+        site_power_kw=site_power_kw or 0.0,
+        load_factor=load_factor or 0.0,
+    )
 
     base_result = run_scenario(
         name="Base case",
@@ -507,6 +517,11 @@ def _build_scenario_results_snapshot(
         cfg=scenarios_cfg["base"],
         total_capex_gbp=total_capex_gbp,
         usd_to_gbp=usd_to_gbp,
+        incentive_gbp_per_year=(
+            rhi_scenarios.get("Base", None).rhi_uplift_gbp_per_year
+            if rhi_scenarios.get("Base")
+            else 0.0
+        ),
     )
     best_result = run_scenario(
         name="Best case",
@@ -514,6 +529,11 @@ def _build_scenario_results_snapshot(
         cfg=scenarios_cfg["best"],
         total_capex_gbp=total_capex_gbp,
         usd_to_gbp=usd_to_gbp,
+        incentive_gbp_per_year=(
+            rhi_scenarios.get("Best", None).rhi_uplift_gbp_per_year
+            if rhi_scenarios.get("Best")
+            else 0.0
+        ),
     )
     worst_result = run_scenario(
         name="Worst case",
@@ -521,6 +541,11 @@ def _build_scenario_results_snapshot(
         cfg=scenarios_cfg["worst"],
         total_capex_gbp=total_capex_gbp,
         usd_to_gbp=usd_to_gbp,
+        incentive_gbp_per_year=(
+            rhi_scenarios.get("Worst", None).rhi_uplift_gbp_per_year
+            if rhi_scenarios.get("Worst")
+            else 0.0
+        ),
     )
 
     st.session_state["pdf_scenarios"] = {
@@ -1602,7 +1627,14 @@ def render_dashboard() -> None:
                                 )
 
             st.markdown("---")
-            st.markdown("## 3. Your financial forecasts")
+
+            render_heat_and_incentives(
+                site_power_kw=site_inputs.site_power_kw,
+                load_factor=load_factor,
+            )
+
+            st.markdown("---")
+            st.markdown("## 4. Your financial forecasts")
 
             st.markdown(
                 "These forecasts show how your selected revenue share applies across "
@@ -1659,6 +1691,8 @@ def render_dashboard() -> None:
                 go_live_date=site_inputs.go_live_date,
                 total_capex_gbp=getattr(capex_breakdown, "total_gbp", 0.0),
                 monthly_rows=monthly_rows_for_scenarios,
+                site_power_kw=site_inputs.site_power_kw,
+                load_factor=load_factor,
             )
 
             if scenario_results:
@@ -1689,6 +1723,8 @@ def render_dashboard() -> None:
                         go_live_date=site_inputs.go_live_date,
                         total_capex_gbp=getattr(capex_breakdown, "total_gbp", 0.0),
                         monthly_rows=monthly_rows_for_scenarios,
+                        site_power_kw=site_inputs.site_power_kw,
+                        load_factor=load_factor,
                     )
                     if updated_results:
                         base_result, best_result, worst_result = updated_results

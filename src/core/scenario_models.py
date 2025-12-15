@@ -81,6 +81,9 @@ class AnnualScenarioEconomics:
     client_tax_gbp: float
     client_net_income_gbp: float
 
+    # Incentives / adders (client-side)
+    incentive_revenue_gbp: float = 0.0
+
 
 @dataclass
 class ScenarioResult:
