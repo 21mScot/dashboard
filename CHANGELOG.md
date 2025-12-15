@@ -4,6 +4,15 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.30.3-alpha] - 2025-12-15
+### Added
+- Base-case annual economics can now be aggregated from monthly BTC forecast rows so scenario results and charts share a single forecast source; falls back to settings-driven decay when no monthly data is passed.
+- Site metrics calibration helper for miner/difficulty/pool fee inputs plus Braiins-alignment fixtures/tests to validate the BTC forecast engine.
+
+### Changed
+- Default network difficulty growth flows from settings into both the BTC forecast engine and the scenario base case, with difficulty shocks layering onto that shared baseline.
+- Snapshot scenarios reuse the BTC forecast monthly output for base-case economics and PDF/session caching to keep UI metrics consistent.
+
 ## [v0.30.2-alpha] - 2025-11-25
 ### Added
 - Sidebar tooltips for BTC price, network hashrate, and realised hashprice; clarified FX label and help text.
@@ -106,7 +115,8 @@ All notable changes will be documented in this file.
 - `black` / `ruff` pre-commit hooks
 - Manual Streamlit UI smoke test (scenarios + miner selection)
 
-[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.30.2-alpha...HEAD
+[Unreleased]: https://github.com/21mScot/dashboard/compare/v0.30.3-alpha...HEAD
+[v0.30.3-alpha]: https://github.com/21mScot/dashboard/releases/tag/v0.30.3-alpha
 [v0.30.2-alpha]: https://github.com/21mScot/dashboard/releases/tag/v0.30.2-alpha
 [v0.30.1-alpha]: https://github.com/21mScot/dashboard/releases/tag/v0.30.1-alpha
 [v0.30.0]: https://github.com/21mScot/dashboard/releases/tag/v0.30.0
