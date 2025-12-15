@@ -5,6 +5,7 @@ from datetime import date
 from typing import List, Optional
 
 from src.config import settings
+from src.core.btc_forecast_engine import MonthlyForecastRow
 from src.core.scenario_models import (
     AnnualBaseEconomics,
     AnnualScenarioEconomics,
@@ -40,16 +41,41 @@ def _block_subsidy_factor(start_date: date, year_index: int) -> float:
 
 def _difficulty_factor(year_index: int) -> float:
     """Difficulty growth reduces BTC mined over time."""
-    growth = getattr(settings, "DEFAULT_ANNUAL_DIFFICULTY_GROWTH_PCT", 0.0)
-    if growth == 0:
+    default_diff_growth_pct = float(
+        getattr(settings, "DEFAULT_ANNUAL_DIFFICULTY_GROWTH_PCT", 0.0)
+    )
+    diff_growth = max(0.0, default_diff_growth_pct) / 100.0
+    if diff_growth == 0:
         return 1.0
-    return 1.0 / ((1.0 + growth) ** (year_index - 1))
+    return 1.0 / ((1.0 + diff_growth) ** (year_index - 1))
+
+
+def btc_multiplier_from_difficulty_level_shock(
+    difficulty_level_shock_fraction: float,
+) -> float:
+    """
+    Convert a difficulty level shock into a BTC production multiplier.
+
+    BTC mined is inversely proportional to difficulty:
+      BTC' = BTC / (1 + shock)
+
+    Examples:
+      shock = +0.20 → multiplier = 1/1.20 (harder network)
+      shock = -0.10 → multiplier = 1/0.90 (easier network)
+
+    Guardrail: shock must be > -1.0 (difficulty cannot be <= 0).
+    """
+    if difficulty_level_shock_fraction <= -1.0:
+        raise ValueError("difficulty_level_shock_fraction must be > -1.0")
+    return 1.0 / (1.0 + difficulty_level_shock_fraction)
 
 
 def build_base_annual_from_site_metrics(
     site: SiteMetrics,
     project_years: int,
     go_live_date: Optional[date] = None,
+    monthly_rows: Optional[List[MonthlyForecastRow]] = None,
+    usd_to_gbp: Optional[float] = None,
 ) -> List[AnnualBaseEconomics]:
     """
     Build a base-case annual economics series directly from the
@@ -77,42 +103,84 @@ def build_base_annual_from_site_metrics(
 
     years: List[AnnualBaseEconomics] = []
     start_date = go_live_date or date.today()
+    usd_to_gbp_rate = (
+        float(usd_to_gbp)
+        if usd_to_gbp is not None
+        else float(getattr(settings, "DEFAULT_USD_TO_GBP", 0.75))
+    )
 
-    for year_idx in range(1, project_years + 1):
-        subsidy_factor = _block_subsidy_factor(
-            start_date=start_date,
-            year_index=year_idx,
-        )
-        difficulty_factor = _difficulty_factor(year_idx)
+    # If we already have monthly rows (e.g., from the BTC forecast), aggregate
+    # them to drive the annual base case so all displays share the same source.
+    if monthly_rows:
+        monthly_by_year = {}
+        for row in monthly_rows:
+            monthly_by_year.setdefault(row.month.year, []).append(row)
 
-        btc_mined = site.site_btc_per_day * 365.0 * subsidy_factor * difficulty_factor
+        for year_idx in range(1, project_years + 1):
+            target_year = start_date.year + (year_idx - 1)
+            rows = monthly_by_year.get(target_year, [])
+            btc_mined = sum(r.btc_mined for r in rows)
+            revenue_gbp = btc_mined * btc_price_usd * usd_to_gbp_rate
+            electricity_cost_gbp = site.site_power_cost_gbp_per_day * 365.0
+            other_opex_gbp = 0.0
+            total_opex_gbp = electricity_cost_gbp + other_opex_gbp
+            ebitda_gbp = revenue_gbp - total_opex_gbp
+            ebitda_margin = ebitda_gbp / revenue_gbp if revenue_gbp > 0 else 0.0
 
-        revenue_gbp = (
-            site.site_revenue_gbp_per_day * 365.0 * subsidy_factor * difficulty_factor
-        )
-        electricity_cost_gbp = site.site_power_cost_gbp_per_day * 365.0
-
-        # At the moment we don't model "other opex" explicitly at the
-        # site level, so keep it at zero for transparency.
-        other_opex_gbp = 0.0
-
-        total_opex_gbp = electricity_cost_gbp + other_opex_gbp
-        ebitda_gbp = revenue_gbp - total_opex_gbp
-        ebitda_margin = ebitda_gbp / revenue_gbp if revenue_gbp > 0 else 0.0
-
-        years.append(
-            AnnualBaseEconomics(
-                year_index=year_idx,
-                btc_mined=btc_mined,
-                btc_price_usd=btc_price_usd,
-                revenue_gbp=revenue_gbp,
-                electricity_cost_gbp=electricity_cost_gbp,
-                other_opex_gbp=other_opex_gbp,
-                total_opex_gbp=total_opex_gbp,
-                ebitda_gbp=ebitda_gbp,
-                ebitda_margin=ebitda_margin,
+            years.append(
+                AnnualBaseEconomics(
+                    year_index=year_idx,
+                    btc_mined=btc_mined,
+                    btc_price_usd=btc_price_usd,
+                    revenue_gbp=revenue_gbp,
+                    electricity_cost_gbp=electricity_cost_gbp,
+                    other_opex_gbp=other_opex_gbp,
+                    total_opex_gbp=total_opex_gbp,
+                    ebitda_gbp=ebitda_gbp,
+                    ebitda_margin=ebitda_margin,
+                )
             )
-        )
+    else:
+        for year_idx in range(1, project_years + 1):
+            subsidy_factor = _block_subsidy_factor(
+                start_date=start_date,
+                year_index=year_idx,
+            )
+            difficulty_factor = _difficulty_factor(year_idx)
+
+            btc_mined = (
+                site.site_btc_per_day * 365.0 * subsidy_factor * difficulty_factor
+            )
+
+            revenue_gbp = (
+                site.site_revenue_gbp_per_day
+                * 365.0
+                * subsidy_factor
+                * difficulty_factor
+            )
+            electricity_cost_gbp = site.site_power_cost_gbp_per_day * 365.0
+
+            # At the moment we don't model "other opex" explicitly at the
+            # site level, so keep it at zero for transparency.
+            other_opex_gbp = 0.0
+
+            total_opex_gbp = electricity_cost_gbp + other_opex_gbp
+            ebitda_gbp = revenue_gbp - total_opex_gbp
+            ebitda_margin = ebitda_gbp / revenue_gbp if revenue_gbp > 0 else 0.0
+
+            years.append(
+                AnnualBaseEconomics(
+                    year_index=year_idx,
+                    btc_mined=btc_mined,
+                    btc_price_usd=btc_price_usd,
+                    revenue_gbp=revenue_gbp,
+                    electricity_cost_gbp=electricity_cost_gbp,
+                    other_opex_gbp=other_opex_gbp,
+                    total_opex_gbp=total_opex_gbp,
+                    ebitda_gbp=ebitda_gbp,
+                    ebitda_margin=ebitda_margin,
+                )
+            )
 
     return years
 
@@ -126,9 +194,9 @@ def apply_scenario_to_year(
     Apply price/difficulty/electricity shocks and revenue share to a single year.
     """
 
-    # Difficulty shock: treat difficulty_pct as relative change, where
-    # +20% difficulty -> 20% less BTC, -10% difficulty -> 10% more BTC.
-    btc_factor = 1.0 - cfg.difficulty_pct
+    # Difficulty shock: apply level adjustment (inverse relationship).
+    shock_fraction = cfg.difficulty_level_shock_pct / 100.0
+    btc_factor = btc_multiplier_from_difficulty_level_shock(shock_fraction)
     btc_mined = max(base.btc_mined * btc_factor, 0.0)
 
     # Price shock: adjust BTC price, then revenue based on BTC mined.

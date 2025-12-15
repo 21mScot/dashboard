@@ -1,4 +1,17 @@
 # src/core/monthly_forecast.py
+"""
+BTC forecast engine
+
+This module implements a Braiins-style profitability backbone:
+
+- BTC/day is proportional to miner_hash / network_hash * blocks_per_day
+  * (subsidy + fees).
+- Network difficulty growth is modelled with an ANNUAL difficulty increment
+  (%), using compound growth and a monthly time step, similar in spirit to
+  Braiins' "difficulty increment".
+- Block subsidy is halving-aware using DEFAULT_BLOCK_SUBSIDY_BTC,
+  NEXT_HALVING_DATE and HALVING_INTERVAL_YEARS from settings.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -46,6 +59,13 @@ def _add_months(start: date, months: int) -> date:
 def _block_subsidy_for_month(
     start_subsidy: float, halving_date: date, current: date
 ) -> float:
+    """
+    Return the per-block subsidy (BTC) for a given calendar month.
+
+    - start_subsidy is the current block subsidy at the model start (e.g. 3.125 BTC).
+    - halving_date is the NEXT_HALVING_DATE from settings.
+    - Every HALVING_INTERVAL_YEARS after halving_date, the subsidy is cut in half.
+    """
     subsidy = start_subsidy
     interval_years = int(getattr(settings, "HALVING_INTERVAL_YEARS", 4))
     next_halving = halving_date
@@ -59,11 +79,30 @@ def _block_subsidy_for_month(
     return subsidy
 
 
-def _difficulty_multiplier(month_index: int) -> float:
-    growth = getattr(settings, "DEFAULT_ANNUAL_DIFFICULTY_GROWTH_PCT", 0.0)
-    if growth == 0:
+def current_block_subsidy(current_date: date) -> float:
+    """
+    Convenience wrapper around _block_subsidy_for_month using DEFAULT_BLOCK_SUBSIDY_BTC
+    and NEXT_HALVING_DATE from settings.
+    """
+    base_subsidy = float(settings.DEFAULT_BLOCK_SUBSIDY_BTC)
+    halving_tuple = getattr(settings, "NEXT_HALVING_DATE", None)
+    halving_date = (
+        date(*halving_tuple)
+        if halving_tuple and len(halving_tuple) == 3
+        else current_date
+    )
+    return _block_subsidy_for_month(base_subsidy, halving_date, current_date)
+
+
+def _difficulty_multiplier(month_index: int, annual_growth_fraction: float) -> float:
+    """
+    Returns the multiplicative difficulty factor after `month_index` months,
+    assuming an annual compound growth rate of `annual_growth_fraction`
+    (e.g. 0.5 means +50%/year).
+    """
+    if annual_growth_fraction <= 0:
         return 1.0
-    return (1.0 + growth) ** (month_index / 12.0)
+    return (1.0 + annual_growth_fraction) ** (month_index / 12.0)
 
 
 def build_monthly_forecast(
@@ -72,11 +111,20 @@ def build_monthly_forecast(
     project_years: int,
     fee_growth_pct_per_year: float,
     base_fee_btc_per_block: float | None = None,
-    hashrate_growth_pct_per_year: float | None = None,
+    difficulty_growth_pct_per_year: float | None = None,
 ) -> List[MonthlyForecastRow]:
     """
-    Build a month-by-month BTC forecast for the site, halving-aware with
-    network hashrate growth mapped into difficulty.
+    Build a month-by-month BTC forecast for the site.
+
+    - Uses a Braiins-style difficulty increment model:
+      difficulty_growth_pct_per_year is an ANNUAL percentage
+      (e.g. 50.0 means +50%/year), applied as compound growth and mapped into a
+      difficulty multiplier.
+    - Block subsidies are halving-aware, based on DEFAULT_BLOCK_SUBSIDY_BTC and
+      NEXT_HALVING_DATE.
+    - Transaction fees per block grow with fee_growth_pct_per_year (also annual %).
+    - site.site_btc_per_day is interpreted as the baseline BTC/day at start_date
+      under DEFAULT_BLOCK_SUBSIDY_BTC and current difficulty.
     """
     if project_years <= 0 or site.site_btc_per_day <= 0:
         return []
@@ -90,11 +138,13 @@ def build_monthly_forecast(
         else date(start_date.year, start_date.month, start_date.day)
     )
     fee_growth = max(0.0, fee_growth_pct_per_year) / 100.0
-    diff_growth = (
-        max(0.0, hashrate_growth_pct_per_year) / 100.0
-        if hashrate_growth_pct_per_year is not None
-        else getattr(settings, "DEFAULT_ANNUAL_DIFFICULTY_GROWTH_PCT", 0.0)
+    default_diff_growth_pct = float(
+        getattr(settings, "DEFAULT_ANNUAL_DIFFICULTY_GROWTH_PCT", 0.0)
     )
+    if difficulty_growth_pct_per_year is not None:
+        diff_growth = max(0.0, difficulty_growth_pct_per_year) / 100.0
+    else:
+        diff_growth = max(0.0, default_diff_growth_pct) / 100.0
     base_fee = base_fee_btc_per_block or settings.DEFAULT_FEE_BTC_PER_BLOCK
 
     rows: List[MonthlyForecastRow] = []
@@ -102,10 +152,7 @@ def build_monthly_forecast(
         month_start = _add_months(start_date, idx)
         subsidy = _block_subsidy_for_month(base_subsidy, halving_date, month_start)
         # Override difficulty growth if provided
-        if diff_growth == 0:
-            diff_mult = 1.0
-        else:
-            diff_mult = (1.0 + diff_growth) ** (idx / 12.0)
+        diff_mult = _difficulty_multiplier(idx, diff_growth)
 
         fee_per_block = base_fee * ((1.0 + fee_growth) ** (idx / 12.0))
         reward_factor = (

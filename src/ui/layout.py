@@ -82,6 +82,25 @@ except Exception:
     pass
 
 
+def _get_forecast_growth_inputs():
+    """Fetch difficulty and fee growth assumptions from session state or defaults."""
+    placeholder_hashrate_key = "placeholder_hashrate_growth_pct"
+    placeholder_fee_key = "placeholder_fee_growth_pct"
+    difficulty_default = int(getattr(settings, "DEFAULT_HASHRATE_GROWTH_PCT", 0))
+    fee_default = int(getattr(settings, "DEFAULT_FEE_GROWTH_PCT", 0))
+
+    difficulty_growth_pct = int(
+        st.session_state.get(placeholder_hashrate_key, difficulty_default)
+    )
+    fee_growth_pct = int(st.session_state.get(placeholder_fee_key, fee_default))
+    return (
+        placeholder_hashrate_key,
+        placeholder_fee_key,
+        difficulty_growth_pct,
+        fee_growth_pct,
+    )
+
+
 # ---------------------------------------------------------
 # Difficulty formatter (UI-only)
 # ---------------------------------------------------------
@@ -449,6 +468,7 @@ def _build_scenario_results_snapshot(
     client_share_pct: float,
     go_live_date,
     total_capex_gbp: float | None = None,
+    monthly_rows: list | None = None,
 ):
     project_years = _derive_project_years(site_metrics)
     if total_capex_gbp is None:
@@ -465,6 +485,8 @@ def _build_scenario_results_snapshot(
             site=site_metrics,
             project_years=project_years,
             go_live_date=go_live_date,
+            monthly_rows=monthly_rows,
+            usd_to_gbp=usd_to_gbp,
         )
     else:
         base_years = _build_dummy_base_years(
@@ -1595,6 +1617,21 @@ def render_dashboard() -> None:
                 settings.SCENARIO_DEFAULT_CLIENT_REVENUE_SHARE * 100
             )
 
+            (
+                placeholder_hashrate_key,
+                placeholder_fee_key,
+                difficulty_growth_pct,
+                fee_growth_pct,
+            ) = _get_forecast_growth_inputs()
+
+            monthly_rows_for_scenarios = build_monthly_forecast(
+                site=site_metrics,
+                start_date=site_inputs.go_live_date,
+                project_years=_derive_project_years(site_metrics),
+                fee_growth_pct_per_year=float(fee_growth_pct),
+                difficulty_growth_pct_per_year=float(difficulty_growth_pct),
+            )
+
             def _coerce_share_pct(value):
                 try:
                     return int(float(value))
@@ -1621,6 +1658,7 @@ def render_dashboard() -> None:
                 client_share_pct=client_share_pct,
                 go_live_date=site_inputs.go_live_date,
                 total_capex_gbp=getattr(capex_breakdown, "total_gbp", 0.0),
+                monthly_rows=monthly_rows_for_scenarios,
             )
 
             if scenario_results:
@@ -1650,6 +1688,7 @@ def render_dashboard() -> None:
                         client_share_pct=client_share_pct,
                         go_live_date=site_inputs.go_live_date,
                         total_capex_gbp=getattr(capex_breakdown, "total_gbp", 0.0),
+                        monthly_rows=monthly_rows_for_scenarios,
                     )
                     if updated_results:
                         base_result, best_result, worst_result = updated_results
@@ -1901,13 +1940,18 @@ def render_dashboard() -> None:
 def _render_btc_monthly_forecast(
     site_metrics: SiteMetrics, site_inputs, network_data: NetworkData
 ) -> BTCForecastContext:
+    (
+        placeholder_hashrate_key,
+        placeholder_fee_key,
+        difficulty_growth_pct,
+        fee_growth_pct,
+    ) = _get_forecast_growth_inputs()
+
     ctx = BTCForecastContext(
         monthly_rows=[],
         monthly_df=pd.DataFrame(),
-        fee_growth_pct=float(getattr(settings, "DEFAULT_FEE_GROWTH_PCT", 0)),
-        difficulty_growth_pct=float(
-            getattr(settings, "DEFAULT_HASHRATE_GROWTH_PCT", 0)
-        ),
+        fee_growth_pct=float(fee_growth_pct),
+        difficulty_growth_pct=float(difficulty_growth_pct),
     )
     with st.expander("BTC forecast...", expanded=False):
         st.markdown(
@@ -1915,29 +1959,12 @@ def _render_btc_monthly_forecast(
             "(dashed). The drop in 2028 is the block reward halving."
         )
 
-        placeholder_hashrate_key = "placeholder_hashrate_growth_pct"
-        difficulty_growth_pct = int(
-            st.session_state.get(
-                placeholder_hashrate_key,
-                int(settings.DEFAULT_HASHRATE_GROWTH_PCT),
-            )
-        )
-        placeholder_fee_key = "placeholder_fee_growth_pct"
-        fee_growth_pct = int(
-            st.session_state.get(
-                placeholder_fee_key,
-                int(getattr(settings, "DEFAULT_FEE_GROWTH_PCT", 0)),
-            )
-        )
-        ctx.fee_growth_pct = float(fee_growth_pct)
-        ctx.difficulty_growth_pct = float(difficulty_growth_pct)
-
         monthly_rows = build_monthly_forecast(
             site=site_metrics,
             start_date=site_inputs.go_live_date,
             project_years=_derive_project_years(site_metrics),
             fee_growth_pct_per_year=float(fee_growth_pct),
-            hashrate_growth_pct_per_year=float(difficulty_growth_pct),
+            difficulty_growth_pct_per_year=float(difficulty_growth_pct),
         )
         ctx.monthly_rows = monthly_rows
         monthly_df, y_domain, halving_dates = prepare_btc_display(
@@ -2096,7 +2123,7 @@ def _render_fiat_monthly_forecast(
                 start_date=site_inputs.go_live_date,
                 project_years=_derive_project_years(site_metrics),
                 fee_growth_pct_per_year=float(fee_growth_pct_val),
-                hashrate_growth_pct_per_year=float(difficulty_growth_pct_val),
+                difficulty_growth_pct_per_year=float(difficulty_growth_pct_val),
             )
         monthly_df = btc_ctx.monthly_df
         if monthly_df is None or monthly_df.empty:

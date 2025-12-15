@@ -18,6 +18,9 @@ def build_default_scenarios(
 
     UI and engine code should call this instead of hard-coding
     any of the percentage shocks or default revenue share.
+
+    Note: difficulty_level_shock_pct is a constant multiplier on difficulty
+    level (inverse applied to BTC), not a change to annual difficulty growth.
     """
 
     client_share = (
@@ -30,21 +33,21 @@ def build_default_scenarios(
         "base": ScenarioConfig(
             name="base",
             price_pct=settings.SCENARIO_BASE_PRICE_PCT,
-            difficulty_pct=settings.SCENARIO_BASE_DIFFICULTY_PCT,
+            difficulty_level_shock_pct=settings.SCENARIO_BASE_DIFFICULTY_LEVEL_SHOCK_PCT,
             electricity_pct=settings.SCENARIO_BASE_ELECTRICITY_PCT,
             client_revenue_share=client_share,
         ),
         "best": ScenarioConfig(
             name="best",
             price_pct=settings.SCENARIO_BEST_PRICE_PCT,
-            difficulty_pct=settings.SCENARIO_BEST_DIFFICULTY_PCT,
+            difficulty_level_shock_pct=settings.SCENARIO_BEST_DIFFICULTY_LEVEL_SHOCK_PCT,
             electricity_pct=settings.SCENARIO_BEST_ELECTRICITY_PCT,
             client_revenue_share=client_share,
         ),
         "worst": ScenarioConfig(
             name="worst",
             price_pct=settings.SCENARIO_WORST_PRICE_PCT,
-            difficulty_pct=settings.SCENARIO_WORST_DIFFICULTY_PCT,
+            difficulty_level_shock_pct=settings.SCENARIO_WORST_DIFFICULTY_LEVEL_SHOCK_PCT,
             electricity_pct=settings.SCENARIO_WORST_ELECTRICITY_PCT,
             client_revenue_share=client_share,
         ),

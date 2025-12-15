@@ -1,0 +1,36 @@
+[
+  {
+    "name": "braiins_s19jpro_24m_flat_price",
+    "months": 24,
+    "miner_ths": 104.0,
+    "miner_kw": 3.0,
+    "electricity_usd_per_kwh": 0.07,
+    "pool_fee_pct": 2.0,
+    "additional_opex_usd_per_month": 0.0,
+    "start_difficulty": 80000000000000,
+    "difficulty_growth_annual_pct": 100.0,
+    "start_btc_price_usd": 60000.0,
+    "btc_price_annual_growth_pct": 0.0,
+    "tx_fee_btc_per_block": 0.2,
+    "expected_btc_mined": null,
+    "expected_revenue_usd": null,
+    "tolerance_pct": 3.0
+  },
+  {
+    "name": "braiins_s19jpro_36m_price_up",
+    "months": 36,
+    "miner_ths": 104.0,
+    "miner_kw": 3.0,
+    "electricity_usd_per_kwh": 0.07,
+    "pool_fee_pct": 2.0,
+    "additional_opex_usd_per_month": 0.0,
+    "start_difficulty": 80000000000000,
+    "difficulty_growth_annual_pct": 50.0,
+    "start_btc_price_usd": 60000.0,
+    "btc_price_annual_growth_pct": 20.0,
+    "tx_fee_btc_per_block": 0.1,
+    "expected_btc_mined": null,
+    "expected_revenue_usd": null,
+    "tolerance_pct": 5.0
+  }
+]

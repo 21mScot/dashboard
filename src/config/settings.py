@@ -1,6 +1,7 @@
 # src/config/settings.py
 
 import os
+from datetime import date
 
 from src.config.env import APP_ENV
 
@@ -44,6 +45,7 @@ BLOCK_SUBSIDY_BTC = 3.125
 DEFAULT_BTC_PRICE_USD = 90000.0
 DEFAULT_NETWORK_DIFFICULTY = 150_000_000_000_000
 DEFAULT_BLOCK_SUBSIDY_BTC = BLOCK_SUBSIDY_BTC
+FORECAST_START_DATE = date(2024, 1, 1)
 
 # --- Local currency / FX assumptions ---
 
@@ -59,10 +61,11 @@ SCENARIO_BASE_PRICE_PCT = 0.00
 SCENARIO_BEST_PRICE_PCT = 0.20
 SCENARIO_WORST_PRICE_PCT = -0.20
 
-# Network difficulty shocks
-SCENARIO_BASE_DIFFICULTY_PCT = 0.00
-SCENARIO_BEST_DIFFICULTY_PCT = -0.10
-SCENARIO_WORST_DIFFICULTY_PCT = 0.20
+# Network difficulty level shocks (percentage applied to difficulty level, not growth)
+# e.g. +20.0 = difficulty 20% harder -> BTC / 1.20; -10.0 = 10% easier -> BTC / 0.90
+SCENARIO_BASE_DIFFICULTY_LEVEL_SHOCK_PCT = 0.0
+SCENARIO_BEST_DIFFICULTY_LEVEL_SHOCK_PCT = -10.0
+SCENARIO_WORST_DIFFICULTY_LEVEL_SHOCK_PCT = 20.0
 
 # Electricity cost shocks
 SCENARIO_BASE_ELECTRICITY_PCT = 0.00
@@ -73,6 +76,7 @@ SCENARIO_WORST_ELECTRICITY_PCT = 0.20
 SCENARIO_FALLBACK_PROJECT_YEARS = 4
 
 # Projected network dynamics (base case)
+# Expressed as annual percentages (e.g. 50.0 = +50%/year)
 DEFAULT_ANNUAL_DIFFICULTY_GROWTH_PCT = 0.0
 HALVING_INTERVAL_YEARS = 4
 # Stored as tuple to avoid datetime import in settings
