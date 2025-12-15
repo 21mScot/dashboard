@@ -8,7 +8,7 @@ from typing import Dict, Iterable, Optional
 import streamlit as st
 
 from src.config import settings
-from src.config.env import APP_ENV
+from src.config.env import APP_ENV, ENV_DEV
 from src.core.live_data import NetworkData
 from src.core.miner_economics import compute_miner_economics
 from src.core.miner_models import MinerOption
@@ -25,7 +25,7 @@ def _get_catalogue() -> tuple[Dict[str, MinerOption], set[str]]:
     - dev → uses selected dev catalogue (legacy WTM set by default).
     - prod → uses supplier-approved miners (current default set).
     """
-    if APP_ENV == "dev":
+    if APP_ENV == ENV_DEV:
         dev_key = getattr(settings, "DEV_MINER_SET", "legacy_wtm")
         catalogue, immediate = miners_dev.get_dev_catalogue(dev_key)
         return catalogue, immediate

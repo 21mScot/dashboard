@@ -23,6 +23,7 @@ def run_scenario(
     cfg: ScenarioConfig,
     total_capex_gbp: float,
     usd_to_gbp: float | None = None,
+    incentive_gbp_per_year: float = 0.0,
 ) -> ScenarioResult:
     """
     Run a scenario over the provided base-year economics.
@@ -68,7 +69,12 @@ def run_scenario(
     years: List[AnnualScenarioEconomics] = []
 
     for base in base_years:
-        year = apply_scenario_to_year(base, cfg, usd_to_gbp)
+        year = apply_scenario_to_year(
+            base,
+            cfg,
+            usd_to_gbp,
+            incentive_gbp_per_year=incentive_gbp_per_year,
+        )
         years.append(year)
 
     # Aggregates

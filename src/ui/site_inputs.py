@@ -7,7 +7,7 @@ from datetime import date, timedelta
 import streamlit as st
 
 from src.config import settings
-from src.config.env import APP_ENV
+from src.config.env import APP_ENV, ENV_DEV
 
 
 def _add_years_safe(d: date, years: int) -> date:
@@ -54,20 +54,23 @@ def render_site_inputs() -> SiteInputs:
     )
 
     col_power, col_cost = st.columns(2)
-    is_dev = APP_ENV.lower() == "dev"
+    is_dev = APP_ENV == ENV_DEV
     default_power = settings.DEV_DEFAULT_SITE_POWER_KW if is_dev else 0
     default_cost = settings.DEV_DEFAULT_POWER_PRICE_GBP_PER_KWH if is_dev else 0.0
     default_uptime = settings.DEV_DEFAULT_UPTIME_PCT if is_dev else 0
 
     with col_power:
         site_power_kw = st.number_input(
-            "Available site power (kW)",
+            "Power allocated to miners (kW)",
             min_value=0,
             max_value=5000,
             value=default_power,
             step=1,
             format="%d",
-            help="Total electrical capacity available for miners.",
+            help=(
+                "Electrical power consumed by miners/IT load "
+                "(most becomes recoverable heat)."
+            ),
         )
 
     with col_cost:

@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from src.config import settings
-from src.config.env import APP_ENV
+from src.config.env import APP_ENV, ENV_DEV
 from src.core.capex import CapexBreakdown
 from src.core.scenario_models import AnnualScenarioEconomics, ScenarioResult
 
@@ -454,6 +454,6 @@ def render_scenario_panel(
     with st.expander("CapEx breakdown...", expanded=False):
         _render_capex_breakdown(result, capex_breakdown)
 
-    if APP_ENV == "dev":
+    if APP_ENV == ENV_DEV:
         with st.expander("CapEx debugging...", expanded=False):
             _render_capex_debugging(result, capex_breakdown)

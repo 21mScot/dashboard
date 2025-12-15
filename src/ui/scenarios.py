@@ -14,6 +14,7 @@ from src.core.scenario_config import build_default_scenarios
 from src.core.scenario_engine import run_scenario
 from src.core.scenario_models import AnnualBaseEconomics, ScenarioResult
 from src.core.site_metrics import SiteMetrics
+from src.ui.heat_incentives import compute_rhi_scenarios
 from src.ui.scenario_1 import render_scenario_panel
 
 
@@ -350,6 +351,17 @@ def render_scenarios_page(
     scenarios_cfg = build_default_scenarios(
         client_share_override=client_share_fraction,
     )
+    rhi_site_power_kw = st.session_state.get(
+        "rhi_site_power_kw",
+        getattr(site, "site_power_available_kw", 0.0)
+        or getattr(site, "site_power_kw", 0.0)
+        or 0.0,
+    )
+    rhi_load_factor = st.session_state.get("rhi_load_factor", 0.0)
+    rhi_scenarios = compute_rhi_scenarios(
+        site_power_kw=rhi_site_power_kw,
+        load_factor=rhi_load_factor,
+    )
 
     base_result: ScenarioResult = run_scenario(
         name="Base case",
@@ -357,6 +369,11 @@ def render_scenarios_page(
         cfg=scenarios_cfg["base"],
         total_capex_gbp=total_capex_gbp,
         usd_to_gbp=usd_to_gbp,
+        incentive_gbp_per_year=(
+            rhi_scenarios.get("Base", None).rhi_uplift_gbp_per_year
+            if rhi_scenarios.get("Base")
+            else 0.0
+        ),
     )
     best_result: ScenarioResult = run_scenario(
         name="Best case",
@@ -364,6 +381,11 @@ def render_scenarios_page(
         cfg=scenarios_cfg["best"],
         total_capex_gbp=total_capex_gbp,
         usd_to_gbp=usd_to_gbp,
+        incentive_gbp_per_year=(
+            rhi_scenarios.get("Best", None).rhi_uplift_gbp_per_year
+            if rhi_scenarios.get("Best")
+            else 0.0
+        ),
     )
     worst_result: ScenarioResult = run_scenario(
         name="Worst case",
@@ -371,6 +393,11 @@ def render_scenarios_page(
         cfg=scenarios_cfg["worst"],
         total_capex_gbp=total_capex_gbp,
         usd_to_gbp=usd_to_gbp,
+        incentive_gbp_per_year=(
+            rhi_scenarios.get("Worst", None).rhi_uplift_gbp_per_year
+            if rhi_scenarios.get("Worst")
+            else 0.0
+        ),
     )
 
     st.session_state["pdf_scenarios"] = {

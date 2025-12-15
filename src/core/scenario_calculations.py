@@ -189,6 +189,7 @@ def apply_scenario_to_year(
     base: AnnualBaseEconomics,
     cfg: ScenarioConfig,
     usd_to_gbp: float,
+    incentive_gbp_per_year: float = 0.0,
 ) -> AnnualScenarioEconomics:
     """
     Apply price/difficulty/electricity shocks and revenue share to a single year.
@@ -205,6 +206,8 @@ def apply_scenario_to_year(
 
     # Revenue in GBP from BTC * price * FX
     revenue_gbp = btc_mined * btc_price_usd * usd_to_gbp
+    incentive_gbp_per_year = max(0.0, incentive_gbp_per_year)
+    total_revenue_gbp = revenue_gbp + incentive_gbp_per_year
 
     # Electricity cost shock
     electricity_factor = 1.0 + cfg.electricity_pct
@@ -214,13 +217,13 @@ def apply_scenario_to_year(
     other_opex_gbp = base.other_opex_gbp
 
     total_opex_gbp = electricity_cost_gbp + other_opex_gbp
-    ebitda_gbp = revenue_gbp - total_opex_gbp
-    ebitda_margin = ebitda_gbp / revenue_gbp if revenue_gbp > 0 else 0.0
+    ebitda_gbp = total_revenue_gbp - total_opex_gbp
+    ebitda_margin = ebitda_gbp / total_revenue_gbp if total_revenue_gbp > 0 else 0.0
 
     # Revenue split
     client_share = cfg.client_revenue_share
-    client_revenue_gbp = revenue_gbp * client_share
-    operator_revenue_gbp = revenue_gbp - client_revenue_gbp
+    client_revenue_gbp = revenue_gbp * client_share + incentive_gbp_per_year
+    operator_revenue_gbp = revenue_gbp - revenue_gbp * client_share
 
     # Client-side tax and net income
     client_opex_gbp = total_opex_gbp
@@ -236,7 +239,7 @@ def apply_scenario_to_year(
         year_index=base.year_index,
         btc_mined=btc_mined,
         btc_price_usd=btc_price_usd,
-        revenue_gbp=revenue_gbp,
+        revenue_gbp=total_revenue_gbp,
         electricity_cost_gbp=electricity_cost_gbp,
         other_opex_gbp=other_opex_gbp,
         total_opex_gbp=total_opex_gbp,
@@ -246,4 +249,5 @@ def apply_scenario_to_year(
         operator_revenue_gbp=operator_revenue_gbp,
         client_tax_gbp=client_tax_gbp,
         client_net_income_gbp=client_net_income_gbp,
+        incentive_revenue_gbp=incentive_gbp_per_year,
     )
